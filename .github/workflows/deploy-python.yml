@@ -34,15 +34,19 @@ jobs:
           set -euo pipefail
           echo "Build artifacts in dist/:"
           ls -la dist/ || true
-          shopt -s nullglob
-          artifacts=(dist/*.whl dist/*.tar.gz)
-          if [ ${#artifacts[@]} -eq 0 ]; then
-            echo "No build artifacts found in dist/" >&2
+          echo "Build artifacts in ../dist/:"
+          ls -la ../dist/ || true
+
+          # Try to locate a built artifact in the package dist/, or fallback to workspace dist/
+          PKG="$(ls dist/*.whl dist/*.tar.gz ../dist/*.whl ../dist/*.tar.gz 2>/dev/null | head -n1 || true)"
+          if [ -z "${PKG}" ]; then
+            echo "No build artifacts found in dist/ or ../dist/" >&2
             exit 1
           fi
-          PKG="${artifacts[0]}"
+
           echo "Testing package artifact: ${PKG}"
-          uv run --isolated --no-project --with "${PKG}" pytest tests/
+          # Ensure pytest is available in the isolated environment while testing the built wheel
+          uv run --isolated --no-project --with "${PKG}" --with pytest pytest tests/
 
       - name: Publish to PyPI
         if: github.ref_name == 'main'
