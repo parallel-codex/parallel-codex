@@ -17,18 +17,20 @@ jobs:
     runs-on: ubuntu-latest
     env:
       NODE_AUTH_TOKEN: ${{ secrets.NPM_PUBLISH_TOKEN }}
+      NPM_TOKEN: ${{ secrets.NPM_PUBLISH_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
           node-version: 20.x
-          registry-url: 'https://registry.npmjs.org'
+          registry-url: 'https://registry.npmjs.org/'
           always-auth: true
           scope: '@parallel-codex'
 
       - name: Verify npm publish token
         run: |
+          echo "NODE_AUTH_TOKEN length: ${#NODE_AUTH_TOKEN}"
           if [ -z "${NODE_AUTH_TOKEN:-}" ]; then
             echo "Missing NODE_AUTH_TOKEN. Please configure the NPM_PUBLISH_TOKEN secret."
             exit 1
@@ -67,3 +69,4 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_PUBLISH_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_PUBLISH_TOKEN }}
