@@ -15,6 +15,8 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    env:
+      NODE_AUTH_TOKEN: ${{ secrets.NPM_PUBLISH_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
@@ -24,8 +26,6 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
 
       - name: Verify npm publish token
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_PUBLISH_TOKEN }}
         run: |
           if [ -z "${NODE_AUTH_TOKEN:-}" ]; then
             echo "Missing NODE_AUTH_TOKEN. Please configure the NPM_PUBLISH_TOKEN secret."
@@ -33,8 +33,6 @@ jobs:
           fi
 
       - name: Confirm npm authentication
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_PUBLISH_TOKEN }}
         run: npm whoami --registry=https://registry.npmjs.org
 
       - name: Ensure latest npm (OIDC requires npm >= 11.5.1)
