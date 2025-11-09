@@ -76,6 +76,6 @@ jobs:
       - name: Publish package distributions to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          packages_dir: packages/python-package/dist
+          packages-dir: packages/python-package/dist
           attestations: true
           verbose: true
