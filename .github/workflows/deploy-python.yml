@@ -32,7 +32,7 @@ jobs:
       - name: Test built package (wheel)
         working-directory: packages/python-package
         run: |
-          uv run --isolated --no-project --with dist/*.whl pytest tests/
+          run: uv run --isolated --no-project --with $(ls dist/*.whl) pytest tests/
 
       - name: Publish to PyPI
         if: github.ref_name == 'main'
