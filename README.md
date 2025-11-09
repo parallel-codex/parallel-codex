@@ -1,3 +1,5 @@
+![Parallel Codex banner](assets/banner.png)
+
 # Parallel Codex Monorepo
 
 Parallel Codex is a developer-convenience CLI that spins up tmux-based workspaces, each anchored to an autonomous Codex coding agent. Every session owns its own Git worktree, letting multiple branches evolve in parallel while the CLI handles session lifecycle, context sharing, and pull-request orchestration. This repository hosts the TypeScript and Python toolkits plus the CI/CD automation that power those agents.
