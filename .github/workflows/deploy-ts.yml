@@ -37,7 +37,25 @@ jobs:
           fi
 
       - name: Confirm npm authentication
-        run: npm whoami --registry=https://registry.npmjs.org
+        run: |
+          set +e
+          npm whoami --registry=https://registry.npmjs.org
+          status=$?
+          set -e
+          if [ $status -ne 0 ]; then
+            echo "npm whoami failed with exit code $status"
+            mkdir -p "$RUNNER_TEMP/npm-logs"
+            find /home/runner/.npm/_logs -maxdepth 1 -type f -name '*-debug-*.log' -exec cp {} "$RUNNER_TEMP/npm-logs/" \; -print
+            exit $status
+          fi
+
+      - name: Upload npm logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-logs
+          path: ${{ runner.temp }}/npm-logs
+          if-no-files-found: ignore
 
       - run: npm ci
 
