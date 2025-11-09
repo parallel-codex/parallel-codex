@@ -104,3 +104,5 @@ out/
 # Coverage
 coverage/
 .nyc_output/
+
+.agents/
