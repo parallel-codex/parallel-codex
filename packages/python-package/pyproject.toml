@@ -46,8 +46,8 @@ Repository = "https://github.com/parallel-codex/parallel-codex.git"
 Documentation = "https://github.com/parallel-codex/parallel-codex/tree/main/packages/python-package"
 
 [tool.uv]
-# Pending stable docs for dependency groups; dev-dependencies remains supported.
-dev-dependencies = [
+[dependency-groups]
+dev = [
     "pytest>=8.0.0",
     "pytest-cov>=4.1.0",
     "ruff>=0.1.0",
