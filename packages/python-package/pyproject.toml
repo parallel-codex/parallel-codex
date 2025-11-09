@@ -1,5 +1,5 @@
 [project]
-name = "parallel-codex-python"
+name = "parallel-codex"
 version = "0.1.0"
 description = "Python toolkit for orchestrating Parallel Codex agents across isolated worktrees."
 readme = "README.md"
