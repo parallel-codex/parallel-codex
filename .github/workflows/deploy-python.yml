@@ -32,9 +32,17 @@ jobs:
         working-directory: packages/python-package
         run: |
           set -euo pipefail
-          WHEEL="$(ls -1 dist/*.whl | head -n 1)"
-          echo "Testing wheel: ${WHEEL}"
-          uv run --isolated --no-project --with "${WHEEL}" pytest tests/
+          echo "Build artifacts in dist/:"
+          ls -la dist/ || true
+          shopt -s nullglob
+          artifacts=(dist/*.whl dist/*.tar.gz)
+          if [ ${#artifacts[@]} -eq 0 ]; then
+            echo "No build artifacts found in dist/" >&2
+            exit 1
+          fi
+          PKG="${artifacts[0]}"
+          echo "Testing package artifact: ${PKG}"
+          uv run --isolated --no-project --with "${PKG}" pytest tests/
 
       - name: Publish to PyPI
         if: github.ref_name == 'main'
