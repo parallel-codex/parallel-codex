@@ -22,6 +22,7 @@ import threading
 import time
 from collections.abc import Iterable
 from pathlib import Path
+import shlex
 
 BRANCH_METADATA = ".parallel-codex-branch"
 DEFAULT_BASE_DIR = Path("./.agents")
@@ -159,13 +160,15 @@ def _windows_wsl_path(path: Path) -> str:
     return p.replace("\\", "/")
 
 
-def tmux_strategy() -> Tmux:
+def tmux_strategy(*, prefer_wsl: bool = False) -> Tmux:
     is_windows = os.name == "nt"
     native_tmux = which("tmux")
+    wsl = which("wsl.exe")
+    if prefer_wsl and is_windows and wsl:
+        return Tmux(prefix=[wsl, "--", "tmux"], path_mapper=_windows_wsl_path)
     if native_tmux:
         return Tmux(prefix=[native_tmux], path_mapper=lambda p: str(p))
     if is_windows:
-        wsl = which("wsl.exe")
         if wsl:
             return Tmux(prefix=[wsl, "--", "tmux"], path_mapper=_windows_wsl_path)
     return Tmux(prefix=["tmux"], path_mapper=lambda p: str(p))
@@ -196,7 +199,7 @@ def read_branch_file(worktree: Path) -> str | None:
 
 
 def cmd_up(args: argparse.Namespace) -> int:
-    tmux = tmux_strategy()
+    tmux = tmux_strategy(prefer_wsl=bool(getattr(args, "wsl", False)))
     session = SESSION_PREFIX + args.agent
     repo = Path(args.repo).resolve()
     base_dir = Path(args.base_dir).resolve()
@@ -207,8 +210,35 @@ def cmd_up(args: argparse.Namespace) -> int:
     ):
         worktree = ensure_worktree(repo, base_dir, args.agent, args.branch)
 
+    # If we're about to create the session for the first time, try to prepare
+    # the Python environment so jumping into the session is ready to go.
+    needs_session = not tmux.has_session(session)
+    if needs_session and bool(getattr(args, "prep_env", False)):
+        # Detect if tmux will run under WSL so we prep the env in the same OS.
+        is_wsl_tmux = bool(tmux.prefix and os.path.basename(tmux.prefix[0]).lower().startswith("wsl"))
+        if is_wsl_tmux:
+            wsl = tmux.prefix[0]
+            wsl_worktree = _windows_wsl_path(worktree)
+            # Check if uv exists inside WSL
+            uv_present = run([wsl, "--", "bash", "-lc", "command -v uv >/dev/null 2>&1"], check=False).returncode == 0
+            if uv_present:
+                with Spinner("Preparing Python env in WSL (uv sync + install -e)", "Python env ready"):
+                    cmd = f"cd {shlex.quote(wsl_worktree)} && uv sync --project packages/python-package && uv run --project packages/python-package python -m pip install -e packages/python-package"
+                    run([wsl, "--", "bash", "-lc", cmd], check=False)
+            else:
+                print(_c("dim", "Tip: 'uv' not found in WSL; skipping dependency sync/install."))
+        else:
+            uv = which("uv")
+            if uv:
+                with Spinner("Preparing Python env (uv sync + install -e)", "Python env ready"):
+                    # Best-effort; do not fail the whole command if these error
+                    run([uv, "sync", "--project", "packages/python-package"], check=False, cwd=worktree)
+                    run([uv, "run", "--project", "packages/python-package", "python", "-m", "pip", "install", "-e", "packages/python-package"], check=False, cwd=worktree)
+            else:
+                print(_c("dim", "Tip: 'uv' not found on PATH; skipping dependency sync/install."))
+
     with Spinner(f"Ensuring tmux session '{session}'", "Tmux session ready"):
-        if not tmux.has_session(session):
+        if needs_session:
             tmux.new_session(session, worktree)
         if args.run_codex:
             tmux.send_keys(session, "codex .")
@@ -221,7 +251,7 @@ def cmd_up(args: argparse.Namespace) -> int:
 
 
 def cmd_switch(args: argparse.Namespace) -> int:
-    tmux = tmux_strategy()
+    tmux = tmux_strategy(prefer_wsl=bool(getattr(args, "wsl", False)))
     session = SESSION_PREFIX + args.agent
     if not tmux.has_session(session):
         print(_c("red", f"Session '{session}' not found."), file=sys.stderr)
@@ -231,7 +261,7 @@ def cmd_switch(args: argparse.Namespace) -> int:
 
 
 def cmd_list(args: argparse.Namespace) -> int:
-    tmux = tmux_strategy()
+    tmux = tmux_strategy(prefer_wsl=bool(getattr(args, "wsl", False)))
     base_dir = Path(args.base_dir).resolve()
     if not base_dir.exists():
         print("No worktrees found.")
@@ -252,7 +282,7 @@ def cmd_list(args: argparse.Namespace) -> int:
 
 
 def cmd_prune(args: argparse.Namespace) -> int:
-    tmux = tmux_strategy()
+    tmux = tmux_strategy(prefer_wsl=bool(getattr(args, "wsl", False)))
     base_dir = Path(args.base_dir).resolve()
     worktree = base_dir / args.agent
     session = SESSION_PREFIX + args.agent
@@ -285,13 +315,33 @@ def build_parser() -> argparse.ArgumentParser:
         help="Switch/attach to the tmux session after setup",
     )
     up.add_argument("--run-codex", action="store_true", help="Send 'codex .' into the tmux session")
+    up.add_argument(
+        "--prep-env",
+        action="store_true",
+        help="Before creating the session, run 'uv sync' and install the package in editable mode",
+    )
+    up.add_argument(
+        "--wsl",
+        action="store_true",
+        help="Force tmux to run via WSL on Windows and run commands inside WSL",
+    )
     up.set_defaults(handler=cmd_up)
 
     sw = sub.add_parser("switch", help="Switch/attach to an existing tmux session")
     sw.add_argument("agent")
+    sw.add_argument(
+        "--wsl",
+        action="store_true",
+        help="Use WSL tmux session (Windows)",
+    )
     sw.set_defaults(handler=cmd_switch)
 
     ls = sub.add_parser("list", help="List known agent worktrees and tmux state")
+    ls.add_argument(
+        "--wsl",
+        action="store_true",
+        help="Use WSL tmux instance to query session state (Windows)",
+    )
     ls.set_defaults(handler=cmd_list)
 
     pr = sub.add_parser("prune", help="Kill tmux and/or remove a worktree directory")
@@ -302,6 +352,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Kill the tmux session for the agent",
     )
     pr.add_argument("--remove-dir", action="store_true", help="Delete the agent worktree directory")
+    pr.add_argument(
+        "--wsl",
+        action="store_true",
+        help="Target a WSL tmux session (Windows)",
+    )
     pr.set_defaults(handler=cmd_prune)
 
     return p
