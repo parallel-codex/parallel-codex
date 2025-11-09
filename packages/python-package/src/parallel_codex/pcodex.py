@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -22,7 +23,6 @@ import threading
 import time
 from collections.abc import Iterable
 from pathlib import Path
-import shlex
 
 BRANCH_METADATA = ".parallel-codex-branch"
 DEFAULT_BASE_DIR = Path("./.agents")
@@ -215,25 +215,67 @@ def cmd_up(args: argparse.Namespace) -> int:
     needs_session = not tmux.has_session(session)
     if needs_session and bool(getattr(args, "prep_env", False)):
         # Detect if tmux will run under WSL so we prep the env in the same OS.
-        is_wsl_tmux = bool(tmux.prefix and os.path.basename(tmux.prefix[0]).lower().startswith("wsl"))
+        is_wsl_tmux = bool(
+            tmux.prefix
+            and os.path.basename(tmux.prefix[0]).lower().startswith("wsl")
+        )
         if is_wsl_tmux:
             wsl = tmux.prefix[0]
             wsl_worktree = _windows_wsl_path(worktree)
             # Check if uv exists inside WSL
-            uv_present = run([wsl, "--", "bash", "-lc", "command -v uv >/dev/null 2>&1"], check=False).returncode == 0
+            uv_present = (
+                run(
+                    [wsl, "--", "bash", "-lc", "command -v uv >/dev/null 2>&1"],
+                    check=False,
+                ).returncode
+                == 0
+            )
             if uv_present:
-                with Spinner("Preparing Python env in WSL (uv sync + install -e)", "Python env ready"):
-                    cmd = f"cd {shlex.quote(wsl_worktree)} && uv sync --project packages/python-package && uv run --project packages/python-package python -m pip install -e packages/python-package"
+                with Spinner(
+                    "Preparing Python env in WSL (uv sync + install -e)",
+                    "Python env ready",
+                ):
+                    commands = [
+                        f"cd {shlex.quote(wsl_worktree)}",
+                        "uv sync --project packages/python-package",
+                        (
+                            "uv run --project packages/python-package python -m pip install -e "
+                            "packages/python-package"
+                        ),
+                    ]
+                    cmd = " && ".join(commands)
                     run([wsl, "--", "bash", "-lc", cmd], check=False)
             else:
                 print(_c("dim", "Tip: 'uv' not found in WSL; skipping dependency sync/install."))
         else:
             uv = which("uv")
             if uv:
-                with Spinner("Preparing Python env (uv sync + install -e)", "Python env ready"):
+                with Spinner(
+                    "Preparing Python env (uv sync + install -e)",
+                    "Python env ready",
+                ):
                     # Best-effort; do not fail the whole command if these error
-                    run([uv, "sync", "--project", "packages/python-package"], check=False, cwd=worktree)
-                    run([uv, "run", "--project", "packages/python-package", "python", "-m", "pip", "install", "-e", "packages/python-package"], check=False, cwd=worktree)
+                    run(
+                        [uv, "sync", "--project", "packages/python-package"],
+                        check=False,
+                        cwd=worktree,
+                    )
+                    run(
+                        [
+                            uv,
+                            "run",
+                            "--project",
+                            "packages/python-package",
+                            "python",
+                            "-m",
+                            "pip",
+                            "install",
+                            "-e",
+                            "packages/python-package",
+                        ],
+                        check=False,
+                        cwd=worktree,
+                    )
             else:
                 print(_c("dim", "Tip: 'uv' not found on PATH; skipping dependency sync/install."))
 
