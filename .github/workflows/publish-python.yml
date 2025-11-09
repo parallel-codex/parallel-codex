@@ -6,6 +6,14 @@ on:
       version:
         description: "Version tag to publish"
         required: true
+  release:
+    types: [published]
+  workflow_call:
+    inputs:
+      version:
+        description: "Version tag to publish"
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -42,8 +50,28 @@ jobs:
         working-directory: packages/python-package
         run: uv build
 
+      - name: Test built package (wheel)
+        working-directory: packages/python-package
+        run: |
+          set -euo pipefail
+          echo "Build artifacts in dist/:"
+          ls -la dist/ || true
+          echo "Build artifacts in ../dist/:"
+          ls -la ../dist/ || true
+          echo "Build artifacts in ../../dist/:"
+          ls -la ../../dist/ || true
+
+          PKG="$(ls dist/*.whl dist/*.tar.gz ../dist/*.whl ../dist/*.tar.gz ../../dist/*.whl ../../dist/*.tar.gz 2>/dev/null | head -n1 || true)"
+          if [ -z "${PKG}" ]; then
+            echo "No build artifacts found in dist/, ../dist/, or ../../dist/" >&2
+            exit 1
+          fi
+
+          echo "Testing package artifact: ${PKG}"
+          uv run --isolated --no-project --with "${PKG}" --with pytest pytest tests/
+
       - name: Publish to PyPI
         working-directory: packages/python-package
         env:
-          UV_PUBLISH_VERSION: ${{ github.event.inputs.version || github.ref_name }}
+          UV_PUBLISH_VERSION: ${{ inputs.version || github.event.inputs.version || github.ref_name }}
         run: uv publish --token "${{ secrets.PYPI_API_TOKEN }}"
