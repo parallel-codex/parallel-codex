@@ -1,0 +1,23 @@
+{
+  "name": "parallel-codex",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Parallel Codex agent manager monorepo.",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "test": "npm run test --workspaces",
+    "lint": "npm run lint --workspaces",
+    "release": "changeset publish"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.26.2"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/parallel-codex/parallel-codex.git"
+  },
+  "license": "MIT"
+}

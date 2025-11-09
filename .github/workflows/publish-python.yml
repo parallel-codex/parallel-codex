@@ -1,0 +1,52 @@
+name: Publish Python Package
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version tag to publish"
+        required: true
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Install Python 3.11
+        run: uv python install 3.11
+
+      - name: Sync dependencies
+        working-directory: packages/python-package
+        run: uv sync --group dev
+
+      - name: Run tests
+        working-directory: packages/python-package
+        run: uv run pytest
+
+      - name: Lint package
+        working-directory: packages/python-package
+        run: uv run ruff check .
+
+      - name: Build package
+        working-directory: packages/python-package
+        run: uv build --no-sources
+
+      - name: Publish to PyPI
+        working-directory: packages/python-package
+        env:
+          UV_PUBLISH_VERSION: ${{ github.event.inputs.version || github.ref_name }}
+        run: uv publish

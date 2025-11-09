@@ -54,7 +54,6 @@ dmypy.json
 .pyre/
 *.pyc
 .uv/
-uv.lock
 
 # IDE and Editor
 .vscode/

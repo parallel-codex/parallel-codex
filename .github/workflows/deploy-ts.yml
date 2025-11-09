@@ -1,0 +1,48 @@
+name: Deploy TypeScript Package
+
+on:
+  push:
+    branches:
+      - dev
+      - main
+    paths:
+      - 'packages/typescript-package/**'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ github.ref_name == 'main' && 'production' || 'development' }}
+    permissions:
+      contents: read
+      id-token: write  # Required for npm OIDC authentication
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+          registry-url: 'https://registry.npmjs.org'
+
+      - run: npm ci
+
+      - name: Build package
+        working-directory: packages/typescript-package
+        run: npm run build
+
+      - name: Test package
+        working-directory: packages/typescript-package
+        run: npm test
+
+      - name: Publish beta version
+        if: github.ref_name == 'dev'
+        working-directory: packages/typescript-package
+        run: |
+          npm version prerelease --preid=beta --no-git-tag-version
+          npm publish --tag beta
+
+      - name: Publish stable version
+        if: github.ref_name == 'main'
+        working-directory: packages/typescript-package
+        run: npm publish --tag latest

@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [dev, main]
+  push:
+    branches: [dev, main]
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    outputs:
+      typescript: ${{ steps.filter.outputs.typescript }}
+      python: ${{ steps.filter.outputs.python }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            typescript:
+              - 'packages/typescript-package/**'
+            python:
+              - 'packages/python-package/**'
+
+  test-typescript:
+    needs: changes
+    if: needs.changes.outputs.typescript == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+
+      - run: npm ci
+
+      - name: Build TypeScript package
+        working-directory: packages/typescript-package
+        run: npm run build
+
+      - name: Test TypeScript package
+        working-directory: packages/typescript-package
+        run: npm test
+
+      - name: Lint TypeScript package
+        working-directory: packages/typescript-package
+        run: npm run lint
+
+  test-python:
+    needs: changes
+    if: needs.changes.outputs.python == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Set up Python
+        run: uv python install 3.11
+
+      - name: Install dependencies
+        working-directory: packages/python-package
+        run: uv sync
+
+      - name: Build Python package
+        working-directory: packages/python-package
+        run: uv build
+
+      - name: Test Python package
+        working-directory: packages/python-package
+        run: uv run pytest
+
+      - name: Lint Python package
+        working-directory: packages/python-package
+        run: uv run ruff check .

@@ -1,0 +1,56 @@
+{
+  "name": "@parallel-codex/typescript-package",
+  "version": "0.1.0",
+  "description": "Shared TypeScript utilities for the Parallel Codex monorepo.",
+  "type": "module",
+  "main": "./dist/cjs/index.js",
+  "module": "./dist/esm/index.js",
+  "types": "./dist/esm/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/esm/index.d.ts",
+      "import": "./dist/esm/index.js",
+      "require": "./dist/cjs/index.js",
+      "default": "./dist/esm/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist/"
+  ],
+  "keywords": [
+    "parallel-codex",
+    "monorepo",
+    "typescript"
+  ],
+  "scripts": {
+    "build": "npm run build:esm && npm run build:cjs",
+    "build:esm": "tsc --module es2022 --outDir dist/esm",
+    "build:cjs": "tsc --module commonjs --outDir dist/cjs && echo '{\"type\":\"commonjs\"}' > dist/cjs/package.json",
+    "test": "vitest run",
+    "lint": "eslint src/",
+    "prepublishOnly": "npm run build"
+  },
+  "devDependencies": {
+    "eslint": "^8.0.0",
+    "typescript": "^5.0.0",
+    "vitest": "^4.0.8"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/parallel-codex/parallel-codex.git",
+    "directory": "packages/typescript-package"
+  },
+  "bugs": {
+    "url": "https://github.com/parallel-codex/parallel-codex/issues"
+  },
+  "homepage": "https://github.com/parallel-codex/parallel-codex#readme",
+  "license": "MIT"
+}

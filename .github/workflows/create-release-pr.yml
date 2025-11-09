@@ -1,0 +1,44 @@
+name: Create Release PR
+
+on:
+  push:
+    branches:
+      - dev
+
+jobs:
+  create-pr:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check if ahead of main
+        id: check
+        run: |
+          git fetch origin main
+          AHEAD=$(git rev-list --count origin/main..origin/dev)
+          echo "ahead=$AHEAD" >> $GITHUB_OUTPUT
+
+      - name: Create Pull Request
+        if: steps.check.outputs.ahead > 0
+        uses: peter-evans/create-pull-request@v6
+        with:
+          branch: dev
+          base: main
+          title: "Release: Deploy dev to production"
+          body: |
+            ## Release Summary
+
+            This PR merges the latest changes from `dev` into `main` for production deployment.
+
+            ### Changes
+            - Automated PR created after successful dev deployment
+
+            **Note:** Merging this PR will trigger production deployments.
+          labels: release
+          reviewers: parallel-codex-maintainers
+          draft: false
