@@ -6,8 +6,6 @@ on:
       version:
         description: "Version tag to publish"
         required: true
-  release:
-    types: [published]
 
 permissions:
   contents: read
