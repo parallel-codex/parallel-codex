@@ -17,7 +17,7 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     environment:
-      name: pypi
+      name: production
     steps:
       - uses: actions/checkout@v4
         with:
