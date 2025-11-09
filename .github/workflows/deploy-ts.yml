@@ -16,6 +16,8 @@ jobs:
     permissions:
       contents: read
       id-token: write  # Required for npm OIDC authentication
+    env:
+      NODE_AUTH_TOKEN: ${{ secrets.NPM_PUBLISH_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
@@ -24,6 +26,18 @@ jobs:
           node-version: '20.x'
           cache: 'npm'
           registry-url: 'https://registry.npmjs.org'
+
+      - name: Verify npm publish token
+        run: |
+          if [ -z "${NODE_AUTH_TOKEN:-}" ]; then
+            echo "Missing NODE_AUTH_TOKEN. Please configure the NPM_PUBLISH_TOKEN secret."
+            exit 1
+          fi
+
+      - name: Configure npm authentication
+        run: |
+          npm config set //registry.npmjs.org/:_authToken "${NODE_AUTH_TOKEN}"
+          npm whoami
 
       - run: npm ci
 
