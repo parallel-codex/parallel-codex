@@ -23,7 +23,6 @@ import time
 from collections.abc import Iterable
 from pathlib import Path
 
-
 BRANCH_METADATA = ".parallel-codex-branch"
 DEFAULT_BASE_DIR = Path("./.agents")
 SESSION_PREFIX = "pcx-"
