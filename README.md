@@ -17,6 +17,7 @@ Parallel Codex is a developer-convenience CLI that spins up tmux-based workspace
 - **uv**: `uv tool install parallel-codex-python`
 - **pip**: `pip install parallel-codex-python`
 - **npm**: `npm install -g @parallel-codex/typescript-package`
+- **brew**: `to be implemented`
 
 ## Usage
 
