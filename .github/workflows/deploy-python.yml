@@ -14,7 +14,6 @@ jobs:
     environment:
       name: ${{ github.ref_name == 'main' && 'production' || 'development' }}
     permissions:
-      id-token: write
       contents: read
     steps:
       - uses: actions/checkout@v4
@@ -40,7 +39,9 @@ jobs:
       - name: Publish to PyPI
         if: github.ref_name == 'main'
         working-directory: packages/python-package
-        run: uv publish
+        env:
+          UV_PUBLISH_VERSION: ${{ github.ref_name }}
+        run: uv publish --token "${{ secrets.NV_PUBLISH_TOKEN }}"
 
       - name: Build and test only on dev
         if: github.ref_name == 'dev'

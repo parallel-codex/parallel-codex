@@ -11,7 +11,6 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 jobs:
   publish:
@@ -49,4 +48,4 @@ jobs:
         working-directory: packages/python-package
         env:
           UV_PUBLISH_VERSION: ${{ github.event.inputs.version || github.ref_name }}
-        run: uv publish
+        run: uv publish --token "${{ secrets.NV_PUBLISH_TOKEN }}"
