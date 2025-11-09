@@ -24,7 +24,7 @@ jobs:
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Run pytest via uv (dev dependency group)
-        run: uv run -E dev pytest
+        run: uv run --group dev pytest
         working-directory: packages/python-package
 
 
