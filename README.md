@@ -21,7 +21,38 @@ Parallel Codex is a developer-convenience CLI that spins up tmux-based workspace
 
 ## Usage
 
-Run `parallel-codex --help` after installation to explore session lifecycle commands, tmux layout presets, and multi-worktree automation features. The CLI guides you through creating agents, attaching them to new or existing branches, and managing concurrent work safely.
+Quickstart (minimal CLI):
+
+```bash
+# install (either works)
+uv tool install parallel-codex-python
+# or: pip install parallel-codex-python
+
+# start an agent worktree + tmux, run codex, and attach
+pcodex up reviewer main --run-codex --attach
+
+# later, switch/attach to the session
+pcodex switch reviewer
+
+# list worktrees and tmux state
+pcodex list
+
+# prune resources
+pcodex prune reviewer --kill-session --remove-dir
+```
+
+Prerequisites:
+- `git` and `tmux` on PATH. On Windows without tmux, `pcodex` auto-falls back to `wsl.exe -- tmux ...`.
+- The `codex` command should be available if you use `--run-codex`.
+
+Dev without installing:
+```bash
+uv run packages/python-package/src/parallel_codex/pcodex.py up reviewer main --run-codex --attach
+```
+
+Advanced CLI (original):
+
+Run `parallel-codex --help` after installation to explore planning/listing/pruning worktree metadata used by higher-level tooling.
 
 ## Repository Layout
 
@@ -73,3 +104,28 @@ Run `parallel-codex --help` after installation to explore session lifecycle comm
 4. Explore the Python CLI locally with `uv run packages/python-package/src/main.py --help` or invoke individual commands such as `uv run packages/python-package/src/main.py plan reviewer main`.
 
 Configure npm and PyPI as trusted OIDC publishers for this repository before running deployments. The TypeScript workflow ships beta-tagged prereleases from `dev` and stable releases from `main`.
+
+### Single-file helper (pcodex)
+
+For a zero-dependency experience, a one-file helper lives inside the Python package and is exposed as `pcodex`:
+
+```bash
+# Ensure worktree + tmux, run codex, and attach (installed)
+pcodex up reviewer main --run-codex --attach
+
+# Or run without installing (dev)
+uv run packages/python-package/src/parallel_codex/pcodex.py up reviewer main --run-codex --attach
+
+# Switch/attach later
+pcodex switch reviewer
+
+# List known worktrees and tmux state
+pcodex list
+
+# Prune (kill tmux + remove dir)
+pcodex prune reviewer --kill-session --remove-dir
+```
+
+Notes:
+- Requires `git` and `tmux` on PATH. On Windows without tmux, it falls back to `wsl.exe -- tmux ...`.
+- Worktrees live under `./.agents/<agent>` by default; override with `--base-dir`.
