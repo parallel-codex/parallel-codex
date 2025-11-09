@@ -38,10 +38,25 @@ jobs:
             exit 1
           fi
 
+      - name: Inspect npm configuration
+        run: |
+          echo "repo .npmrc:"
+          if [ -f .npmrc ]; then
+            sed -E 's/(authToken=).*/\1[masked]/' .npmrc
+          else
+            echo "  [none]"
+          fi
+          echo "user npmrc (${NPM_CONFIG_USERCONFIG:-unset}):"
+          if [ -n "${NPM_CONFIG_USERCONFIG:-}" ] && [ -f "${NPM_CONFIG_USERCONFIG}" ]; then
+            sed -E 's/(authToken=).*/\1[masked]/' "${NPM_CONFIG_USERCONFIG}"
+          else
+            echo "  [none]"
+          fi
+
       - name: Confirm npm authentication
         run: |
           set +e
-          npm whoami --registry=https://registry.npmjs.org
+          npm whoami --registry=https://registry.npmjs.org --scope=@parallel-codex
           status=$?
           set -e
           if [ $status -ne 0 ]; then
