@@ -49,7 +49,7 @@ jobs:
         working-directory: packages/python-package
         env:
           UV_PUBLISH_VERSION: ${{ github.ref_name }}
-        run: uv publish --token "${{ secrets.NV_PUBLISH_TOKEN }}"
+        run: uv publish --token "${{ secrets.PYPI_API_TOKEN }}"
 
       - name: Build and test only on dev
         if: github.ref_name == 'dev'

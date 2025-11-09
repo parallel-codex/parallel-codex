@@ -42,10 +42,10 @@ jobs:
 
       - name: Build package
         working-directory: packages/python-package
-        run: uv build --no-sources
+        run: uv build
 
       - name: Publish to PyPI
         working-directory: packages/python-package
         env:
           UV_PUBLISH_VERSION: ${{ github.event.inputs.version || github.ref_name }}
-        run: uv publish --token "${{ secrets.NV_PUBLISH_TOKEN }}"
+        run: uv publish --token "${{ secrets.PYPI_API_TOKEN }}"
