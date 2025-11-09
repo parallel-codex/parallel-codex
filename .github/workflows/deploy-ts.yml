@@ -26,6 +26,8 @@ jobs:
           node-version: '20.x'
           cache: 'npm'
           registry-url: 'https://registry.npmjs.org'
+          always-auth: true
+          scope: '@parallel-codex'
 
       - name: Verify npm publish token
         run: |
