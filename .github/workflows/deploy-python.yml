@@ -36,11 +36,13 @@ jobs:
           ls -la dist/ || true
           echo "Build artifacts in ../dist/:"
           ls -la ../dist/ || true
+          echo "Build artifacts in ../../dist/:"
+          ls -la ../../dist/ || true
 
           # Try to locate a built artifact in the package dist/, or fallback to workspace dist/
-          PKG="$(ls dist/*.whl dist/*.tar.gz ../dist/*.whl ../dist/*.tar.gz 2>/dev/null | head -n1 || true)"
+          PKG="$(ls dist/*.whl dist/*.tar.gz ../dist/*.whl ../dist/*.tar.gz ../../dist/*.whl ../../dist/*.tar.gz 2>/dev/null | head -n1 || true)"
           if [ -z "${PKG}" ]; then
-            echo "No build artifacts found in dist/ or ../dist/" >&2
+            echo "No build artifacts found in dist/, ../dist/, or ../../dist/" >&2
             exit 1
           fi
 
