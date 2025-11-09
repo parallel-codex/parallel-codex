@@ -3,7 +3,8 @@
 pcodex - ultra-minimal cross-platform CLI to manage agent worktrees + tmux sessions.
 
 Commands:
-  up <agent> <branch>      Ensure git worktree and tmux session; optionally run `codex .` and attach/switch.
+  up <agent> <branch>      Ensure git worktree and tmux session;
+                           optionally run `codex .` and attach/switch.
   switch <agent>           Switch/attach to tmux session.
   list                     List worktrees and tmux session status.
   prune <agent>            Optionally kill tmux session and/or remove the worktree directory.
@@ -19,8 +20,8 @@ import subprocess
 import sys
 import threading
 import time
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Optional, Iterable
 
 
 BRANCH_METADATA = ".parallel-codex-branch"
@@ -54,11 +55,11 @@ def _c(code: str, text: str) -> str:
 
 
 class Spinner:
-    def __init__(self, message: str, done_text: Optional[str] = None):
+    def __init__(self, message: str, done_text: str | None = None):
         self.message = message
         self.done_text = done_text or message
         self._stop = threading.Event()
-        self._thread: Optional[threading.Thread] = None
+        self._thread: threading.Thread | None = None
         self._frames = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 
     def __enter__(self):
@@ -91,7 +92,14 @@ class Spinner:
         return False
 
 
-def run(cmd: Iterable[str], *, check: bool = True, capture: bool = False, env: Optional[dict[str, str]] = None, cwd: Optional[Path] = None) -> subprocess.CompletedProcess:
+def run(
+    cmd: Iterable[str],
+    *,
+    check: bool = True,
+    capture: bool = False,
+    env: dict[str, str] | None = None,
+    cwd: Path | None = None,
+) -> subprocess.CompletedProcess:
     kwargs = {
         "check": check,
         "cwd": str(cwd) if cwd else None,
@@ -103,7 +111,7 @@ def run(cmd: Iterable[str], *, check: bool = True, capture: bool = False, env: O
     return subprocess.run(list(cmd), **kwargs)  # type: ignore[arg-type]
 
 
-def which(name: str) -> Optional[str]:
+def which(name: str) -> str | None:
     return shutil.which(name)
 
 
@@ -180,7 +188,7 @@ def ensure_worktree(repo: Path, base_dir: Path, agent: str, branch: str) -> Path
     return worktree
 
 
-def read_branch_file(worktree: Path) -> Optional[str]:
+def read_branch_file(worktree: Path) -> str | None:
     meta = worktree / BRANCH_METADATA
     if meta.exists():
         raw = meta.read_text(encoding="utf-8").strip()
@@ -194,7 +202,10 @@ def cmd_up(args: argparse.Namespace) -> int:
     repo = Path(args.repo).resolve()
     base_dir = Path(args.base_dir).resolve()
 
-    with Spinner(f"Ensuring worktree for agent '{args.agent}' on '{args.branch}'", "Worktree ensured"):
+    with Spinner(
+        f"Ensuring worktree for agent '{args.agent}' on '{args.branch}'",
+        "Worktree ensured",
+    ):
         worktree = ensure_worktree(repo, base_dir, args.agent, args.branch)
 
     with Spinner(f"Ensuring tmux session '{session}'", "Tmux session ready"):
@@ -258,14 +269,22 @@ def cmd_prune(args: argparse.Namespace) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="pcodex", description="Parallel Codex single-file CLI")
-    p.add_argument("--base-dir", default=str(DEFAULT_BASE_DIR), help="Directory for agent worktrees (default: ./.agents)")
+    p.add_argument(
+        "--base-dir",
+        default=str(DEFAULT_BASE_DIR),
+        help="Directory for agent worktrees (default: ./.agents)",
+    )
     sub = p.add_subparsers(dest="command", required=True)
 
     up = sub.add_parser("up", help="Ensure worktree + tmux; optionally run codex and attach")
     up.add_argument("agent")
     up.add_argument("branch")
     up.add_argument("--repo", default=".", help="Path to git repo (default: .)")
-    up.add_argument("--attach", action="store_true", help="Switch/attach to the tmux session after setup")
+    up.add_argument(
+        "--attach",
+        action="store_true",
+        help="Switch/attach to the tmux session after setup",
+    )
     up.add_argument("--run-codex", action="store_true", help="Send 'codex .' into the tmux session")
     up.set_defaults(handler=cmd_up)
 
@@ -278,14 +297,18 @@ def build_parser() -> argparse.ArgumentParser:
 
     pr = sub.add_parser("prune", help="Kill tmux and/or remove a worktree directory")
     pr.add_argument("agent")
-    pr.add_argument("--kill-session", action="store_true", help="Kill the tmux session for the agent")
+    pr.add_argument(
+        "--kill-session",
+        action="store_true",
+        help="Kill the tmux session for the agent",
+    )
     pr.add_argument("--remove-dir", action="store_true", help="Delete the agent worktree directory")
     pr.set_defaults(handler=cmd_prune)
 
     return p
 
 
-def main(argv: Optional[list[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     handler = getattr(args, "handler", None)
