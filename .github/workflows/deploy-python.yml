@@ -1,91 +1,88 @@
-name: Deploy Python (PyPI)
-on:
-  push:
-    tags: ["py-v*"]
-  workflow_dispatch: {}
-permissions:
-  id-token: write
-  contents: read
-jobs:
-  build-and-publish:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - uses: astral-sh/setup-uv@v3
-      - name: Build (wheel + sdist)
-        working-directory: packages/python-package
-        run: uv build
-      - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          packages-dir: packages/python-package/dist/
-
 name: Deploy Python Package
 
 on:
   push:
-    branches:
-      - dev
-      - main
-    paths:
-      - 'packages/python-package/**'
+    tags:
+      - 'py-v*'
+      - 'v*'
+  release:
+    types: [published]
+  workflow_dispatch:
 
 jobs:
-  deploy:
+  build:
+    name: Build and Test
     runs-on: ubuntu-latest
-    environment:
-      name: pypi
-    permissions:
-      contents: read
-      id-token: write
+    defaults:
+      run:
+        working-directory: packages/python-package
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Install uv
         uses: astral-sh/setup-uv@v4
 
-      - name: Set up Python
+      - name: Install Python 3.11
         run: uv python install 3.11
 
-      - name: Build package
-        working-directory: packages/python-package
+      - name: Sync dependencies
+        run: uv sync --group dev
+
+      - name: Run tests
+        run: uv run pytest
+
+      - name: Lint package
+        run: uv run ruff check .
+
+      - name: Build distributions
         run: uv build
 
-      - name: Test built package (wheel)
-        working-directory: packages/python-package
+      - name: Smoke test built artifacts
         run: |
           set -euo pipefail
-          echo "Build artifacts in dist/:"
-          ls -la dist/ || true
-          echo "Build artifacts in ../dist/:"
-          ls -la ../dist/ || true
-          echo "Build artifacts in ../../dist/:"
-          ls -la ../../dist/ || true
+          echo "Artifacts produced under dist/:"
+          ls -la dist/
 
-          # Try to locate a built artifact in the package dist/, or fallback to workspace dist/
-          PKG="$(ls dist/*.whl dist/*.tar.gz ../dist/*.whl ../dist/*.tar.gz ../../dist/*.whl ../../dist/*.tar.gz 2>/dev/null | head -n1 || true)"
-          if [ -z "${PKG}" ]; then
-            echo "No build artifacts found in dist/, ../dist/, or ../../dist/" >&2
+          first_artifact="$(ls dist/*.whl dist/*.tar.gz 2>/dev/null | head -n1 || true)"
+          if [ -z "${first_artifact}" ]; then
+            echo "No build artifacts found in dist/" >&2
             exit 1
           fi
 
-          echo "Testing package artifact: ${PKG}"
-          # Ensure pytest is available in the isolated environment while testing the built wheel
-          uv run --isolated --no-project --with "${PKG}" --with pytest pytest tests/
+          echo "Testing ${first_artifact}"
+          uv run --isolated --no-project --with "${first_artifact}" --with pytest pytest tests/
+
+      - name: Upload dist artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-dist
+          path: packages/python-package/dist/
+          if-no-files-found: error
+
+  publish:
+    name: Publish to PyPI
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/parallel-codex/
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Download dist artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: python-dist
+          path: dist
+
+      - name: List artifacts
+        run: ls -la dist
 
       - name: Publish package distributions to PyPI
-        if: github.ref_name == 'main'
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          packages-dir: packages/python-package/dist
+          packages-dir: dist
           attestations: true
           verbose: true
-
-      - name: Build and test only on dev
-        if: github.ref_name == 'dev'
-        working-directory: packages/python-package
-        run: |
-          echo "Dev branch - tests passed, no deployment performed"

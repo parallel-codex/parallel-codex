@@ -1,19 +1,11 @@
-name: Publish Python Package
+name: Publish Python Package (Manual)
 
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version tag to publish"
-        required: true
-  release:
-    types: [published]
-  workflow_call:
-    inputs:
-      version:
-        description: "Version tag to publish"
+        description: "Version tag to publish (optional override of GITHUB_REF)"
         required: false
-        type: string
 
 permissions:
   contents: read
