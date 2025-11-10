@@ -25,6 +25,13 @@ Prerequisites:
 - `uv run ruff check .` – lint the codebase
 - `uv run mypy src/` – run type checking with MyPy
 
+## Release Checklist
+
+1. Update the `version` field in `pyproject.toml`.
+2. Commit and push the changes.
+3. Tag the commit with `py-vX.Y.Z` (or `vX.Y.Z`) and push the tag to trigger the GitHub Actions publish workflow.
+4. Confirm the new release appears on [PyPI](https://pypi.org/project/parallel-codex/).
+
 ## CLI Usage (quickstart)
 
 ```bash

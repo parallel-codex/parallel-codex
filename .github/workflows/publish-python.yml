@@ -43,7 +43,7 @@ jobs:
 
       - name: Build package
         working-directory: packages/python-package
-        run: uv build
+        run: uv build --out-dir dist
 
       - name: Test built package (wheel)
         working-directory: packages/python-package

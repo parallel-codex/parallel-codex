@@ -84,7 +84,7 @@ Run `parallel-codex --help` after installation to explore planning/listing/pruni
 - **Vitest / ESLint** for TypeScript tests and linting
 - **Pytest / Ruff** for Python tests and linting
 - **GitHub Actions** workflows for CI, deployments, and automated release PRs
-  - Python publishes on tags `py-v*`.
+  - Python publishes on tags `py-v*` (and also plain `v*` semver tags) after the `packages/python-package` version is bumped.
   - TypeScript publishes on tags `ts-v*` (pre-releases use npm `beta`/`next` tags).
 
 ## Branch Strategy
@@ -106,6 +106,14 @@ Run `parallel-codex --help` after installation to explore planning/listing/pruni
 4. Explore the Python CLI locally with `uv run packages/python-package/src/main.py --help` or invoke individual commands such as `uv run packages/python-package/src/main.py plan reviewer main`.
 
 Configure npm and PyPI as trusted OIDC publishers for this repository before running deployments. The TypeScript workflow ships beta-tagged prereleases from `dev` and stable releases from `main`.
+
+## Releasing the Python Package
+
+1. Bump `version` in `packages/python-package/pyproject.toml`.
+2. Commit the change (and any release notes if desired).
+3. Push the commit, then tag it with either `py-vX.Y.Z` or `vX.Y.Z` and push the tag (e.g. `git tag py-v0.1.2 && git push origin py-v0.1.2`).
+4. The `Deploy Python Package` workflow builds, tests, and publishes the artifacts to PyPI using trusted publishing. You can also trigger it manually via the “Deploy Python Package” workflow if you need a dry run or a re-publish.
+5. Verify the release on [PyPI](https://pypi.org/project/parallel-codex/).
 
 ### Single-file helper (pcodex)
 
