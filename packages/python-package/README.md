@@ -1,12 +1,12 @@
-# parallel-codex-python
+# parallel-codex
 
 Python helpers for orchestrating Parallel Codex agents working in isolated Git worktrees. The toolkit offers a typed core module and a small CLI for planning agent worktrees that the TypeScript layer can execute.
 
 ## Install
 
 ```bash
-uv tool install parallel-codex-python
-# or: pip install parallel-codex-python
+uv tool install parallel-codex
+# or: pip install parallel-codex
 ```
 
 You’ll get two CLIs:

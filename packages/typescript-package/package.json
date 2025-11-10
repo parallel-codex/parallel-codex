@@ -28,11 +28,13 @@
     "build:esm": "tsc --module es2022 --outDir dist/esm",
     "build:cjs": "tsc --module commonjs --outDir dist/cjs && echo '{\"type\":\"commonjs\"}' > dist/cjs/package.json",
     "test": "vitest run",
-    "lint": "eslint src/",
+    "lint": "eslint \"src/**/*.{ts,tsx}\"",
     "prepublishOnly": "npm run build"
   },
   "devDependencies": {
     "eslint": "^8.0.0",
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "@typescript-eslint/parser": "^7.0.0",
     "typescript": "^5.0.0",
     "vitest": "^4.0.8"
   },

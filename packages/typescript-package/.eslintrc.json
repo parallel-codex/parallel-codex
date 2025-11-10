@@ -4,9 +4,12 @@
     "es2022": true,
     "node": true
   },
+  "parser": "@typescript-eslint/parser",
   "parserOptions": {
+    "ecmaVersion": 2022,
     "sourceType": "module"
   },
-  "extends": ["eslint:recommended"],
-  "rules": {}
+  "plugins": ["@typescript-eslint"],
+  "extends": ["eslint:recommended", "plugin:@typescript-eslint/recommended"],
+  "ignorePatterns": ["dist/", "**/*.js"]
 }

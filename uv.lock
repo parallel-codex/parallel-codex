@@ -4,7 +4,7 @@ requires-python = ">=3.11"
 
 [manifest]
 members = [
-    "parallel-codex-python",
+    "parallel-codex",
 ]
 
 [[package]]
@@ -174,8 +174,8 @@ wheels = [
 ]
 
 [[package]]
-name = "parallel-codex-python"
-version = "0.1.0"
+name = "parallel-codex"
+version = "0.1.1"
 source = { editable = "packages/python-package" }
 
 [package.optional-dependencies]

@@ -21,4 +21,4 @@ __all__ = [
     "prune_worktree",
     "format_plan",
 ]
-__version__ = "0.1.0"
+__version__ = "0.1.1"

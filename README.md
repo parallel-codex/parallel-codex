@@ -14,8 +14,8 @@ Parallel Codex is a developer-convenience CLI that spins up tmux-based workspace
 
 > The CLI is published for both Python- and Node.js-first workflows. Choose what fits best for your environment; all installs expose the same `parallel-codex` command.
 
-- **uv**: `uv tool install parallel-codex-python`
-- **pip**: `pip install parallel-codex-python`
+- **uv**: `uv tool install parallel-codex`
+- **pip**: `pip install parallel-codex`
 - **npm**: `npm install -g @parallel-codex/typescript-package`
 - **brew**: `to be implemented`
 
@@ -25,8 +25,8 @@ Quickstart (minimal CLI):
 
 ```bash
 # install (either works)
-uv tool install parallel-codex-python
-# or: pip install parallel-codex-python
+uv tool install parallel-codex
+# or: pip install parallel-codex
 
 # start an agent worktree + tmux, run codex, and attach
 pcodex up reviewer main --run-codex --attach
