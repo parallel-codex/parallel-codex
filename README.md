@@ -84,6 +84,8 @@ Run `parallel-codex --help` after installation to explore planning/listing/pruni
 - **Vitest / ESLint** for TypeScript tests and linting
 - **Pytest / Ruff** for Python tests and linting
 - **GitHub Actions** workflows for CI, deployments, and automated release PRs
+  - Python publishes on tags `py-v*`.
+  - TypeScript publishes on tags `ts-v*` (pre-releases use npm `beta`/`next` tags).
 
 ## Branch Strategy
 

@@ -37,7 +37,7 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     environment:
-      name: ${{ github.ref_name == 'main' && 'pypi' || 'development' }}
+      name: pypi
     permissions:
       contents: read
       id-token: write
