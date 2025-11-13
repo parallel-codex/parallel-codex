@@ -1,6 +1,8 @@
 # parallel-codex
 
-Python helpers for orchestrating Parallel Codex agents working in isolated Git worktrees. The toolkit offers a typed core module and a small CLI for planning agent worktrees that the TypeScript layer can execute.
+**Primary implementation** of Parallel Codex - Python toolkit for orchestrating Parallel Codex agents working in isolated Git worktrees. This package contains the core logic and CLI tools for managing agent worktrees, tmux sessions, and Codex agent orchestration.
+
+**Status:** Core worktree management is implemented. Agent orchestration logic is in development. This is the main package that will be wrapped by npm and Homebrew in the future.
 
 ## Install
 
@@ -27,10 +29,14 @@ Prerequisites:
 
 ## Release Checklist
 
+**Note:** This is the primary package. Publishing is fully implemented and working.
+
 1. Update the `version` field in `pyproject.toml`.
 2. Commit and push the changes.
 3. Tag the commit with `py-vX.Y.Z` (or `vX.Y.Z`) and push the tag to trigger the GitHub Actions publish workflow.
 4. Confirm the new release appears on [PyPI](https://pypi.org/project/parallel-codex/).
+
+Once the core logic is complete, npm and Homebrew wrappers will be developed to provide alternative installation methods.
 
 ## CLI Usage (quickstart)
 

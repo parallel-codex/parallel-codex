@@ -1,21 +1,29 @@
 # @parallel-codex/typescript-package
 
-TypeScript utilities for coordinating Parallel Codex agents as they operate in parallel worktrees.
+**Status: Placeholder / Future npm wrapper**
+
+This package is currently a placeholder. It will be developed into an npm wrapper for the Python `parallel-codex` package once the core Python logic is complete.
+
+## Current State
+
+- Contains placeholder code (greet function)
+- Build infrastructure is set up
+- Publishing workflows exist but are not active
+- **Not ready for use** - focus development on `packages/python-package` first
+
+## Future Plans
+
+Once the Python implementation is complete, this package will:
+- Provide an npm-based installation method (`npm install -g @parallel-codex/typescript-package`)
+- Wrap the Python CLI to provide a Node.js-friendly interface
+- Enable Homebrew package distribution
 
 ## Scripts
 
-- `npm run build` – emit ESM and CJS bundles into `dist/`
-- `npm test` – execute the Vitest suite
+- `npm run build` – emit ESM and CJS bundles into `dist/` (placeholder)
+- `npm test` – execute the Vitest suite (placeholder tests)
 - `npm run lint` – lint the source files with ESLint
-
-## Usage
-
-```ts
-import { greet } from '@parallel-codex/typescript-package';
-
-console.log(greet('agent'));
-```
 
 ## Publishing
 
-Publishing relies on npm’s OIDC trusted publisher integration. The `prepublishOnly` script ensures the package is built prior to publication. Beta releases flow from the canonical `dev` branch before stable artifacts are published from `main`.
+Publishing infrastructure exists but is not active. Once the wrapper is implemented, publishing will rely on npm's OIDC trusted publisher integration. Beta releases will flow from the canonical `dev` branch before stable artifacts are published from `main`.
