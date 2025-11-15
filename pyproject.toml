@@ -1,7 +1,2 @@
 [tool.uv.workspace]
 members = ["packages/python-package"]
-
-[dependency-groups]
-dev = [
-    "openai-agents-mcp>=0.0.8",
-]
