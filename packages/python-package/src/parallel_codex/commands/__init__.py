@@ -20,8 +20,9 @@ def add_common_arguments(parser: ArgumentParser) -> None:
 def register(subparsers: _SubParsersAction[ArgumentParser]) -> None:
     """Import command modules and register their subparsers."""
 
-    from . import list_worktrees, plan, prune
+    from . import list_worktrees, plan, prune, tui
 
     plan.register(subparsers)
     list_worktrees.register(subparsers)
     prune.register(subparsers)
+    tui.register(subparsers)

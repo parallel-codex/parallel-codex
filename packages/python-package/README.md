@@ -1,6 +1,6 @@
 # parallel-codex
 
-**Primary implementation** of Parallel Codex - Python toolkit for orchestrating Parallel Codex agents working in isolated Git worktrees. This package contains the core logic and CLI tools for managing agent worktrees, tmux sessions, and Codex agent orchestration.
+**Primary implementation** of Parallel Codex - Python toolkit for orchestrating Parallel Codex agents working in isolated Git worktrees. This package contains the core logic and CLI tools for managing agent worktrees, tmux sessions, a Textual TUI, and Codex agent orchestration.
 
 **Status:** Core worktree management is implemented. Agent orchestration logic is in development. This is the main package that will be wrapped by npm and Homebrew in the future.
 
@@ -13,11 +13,12 @@ uv tool install parallel-codex
 
 You’ll get two CLIs:
 - `pcodex` – minimal, cross‑platform helper that manages git worktrees + tmux and can run `codex .`
-- `parallel-codex` – lower-level planner/list/prune for worktree metadata
+- `parallel-codex` – lower-level planner/list/prune for worktree metadata plus a TUI
 
 Prerequisites:
 - `git` and `tmux` on PATH. On Windows without tmux, `pcodex` auto-falls back to `wsl.exe -- tmux ...`.
-- The `codex` command should be available if you use `--run-codex`.
+- The `codex` command should be available if you use `--run-codex` or the TUI.
+- Codex CLI must be logged in: run `echo $OPENAI_API_KEY | codex login --with-api-key` once before using the TUI.
 
 ## Commands
 
@@ -62,12 +63,45 @@ The published CLIs expose sub-commands:
 - `parallel-codex plan <agent> <branch>` – calculate (and optionally materialise) a worktree plan.
 - `parallel-codex list` – list discovered plans inside a base directory.
 - `parallel-codex prune <agent>` – remove stored metadata, with `--prune-dir` to delete the folder entirely.
+- `parallel-codex tui` – launch a Textual TUI that drives multiple Codex sessions in parallel.
 - `pcodex up <agent> <branch>` – ensure git worktree, ensure tmux session, optionally run `codex .`, and attach.
 - `pcodex switch <agent>` – switch/attach to the tmux session.
 - `pcodex list` – list worktrees and tmux session state.
 - `pcodex prune <agent> [--kill-session] [--remove-dir]` – kill session and/or remove directory.
 
 Each sub-command accepts `--base-dir` to target a custom location (defaults to `./.agents`).
+
+### TUI usage
+
+The TUI is aimed at running several Codex sessions in parallel, each in its own git worktree:
+
+- One `codex mcp-server` subprocess is spawned and shared for all sessions.
+- Each session gets its own branch and worktree under `./.agents/<session-name>`.
+- Your IDE can open each worktree separately to compare changes across sessions.
+
+Launch the TUI from the root of your git repo:
+
+```bash
+parallel-codex tui \
+  --repo . \
+  --agents-base ./.agents \
+  --model gpt-5-codex \
+  --sandbox workspace-write
+```
+
+Keyboard shortcuts:
+
+- `Ctrl+N` – create a new session (up to three visible side by side; further sessions can be managed but are currently hidden from the main row).
+- `Ctrl+Tab` – cycle focused session.
+- `Ctrl+1/2/3` – focus one of the first three panes.
+- `Ctrl+W` – close the focused session.
+- `Esc` – focus the prompt input.
+
+Per-session worktrees:
+
+- For each new session `session-N`, the TUI creates or reuses a branch like `pcx/session-N` and a worktree under `./.agents/session-N`.
+- Codex runs with `workspace_path` pointing at that worktree, so all file edits are isolated per session.
+- You can manually mix changes between sessions later using normal git operations (e.g. `git merge pcx/session-1` from another branch).
 
 ## Library Usage
 
