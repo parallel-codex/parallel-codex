@@ -20,34 +20,44 @@ from typing import Any, Deque, Dict, Optional
 LOG = logging.getLogger(__name__)
 
 
-def ensure_codex_present() -> None:
-    """Raise RuntimeError if the ``codex`` CLI is not on PATH."""
+def ensure_codex_present() -> str:
+    """Return the path to the `codex` CLI, or raise if not found."""
 
-    if shutil.which("codex") is None:
+    path = shutil.which("codex")
+    if path is None:
         raise RuntimeError(
             "The 'codex' CLI was not found on PATH. "
             "Install Codex and ensure the 'codex' command is available."
         )
+    return path
 
 
 async def ensure_codex_logged_in() -> None:
     """Raise RuntimeError if the current user is not logged into Codex."""
 
-    ensure_codex_present()
+    codex_path = ensure_codex_present()
 
-    proc = await asyncio.create_subprocess_exec(
-        "codex",
-        "login",
-        "status",
-        stdout=asyncio.subprocess.DEVNULL,
-        stderr=asyncio.subprocess.DEVNULL,
-    )
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            codex_path,
+            "login",
+            "status",
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+    except FileNotFoundError as exc:
+        raise RuntimeError(
+            "The 'codex' CLI could not be executed even though it was found on PATH.\n"
+            f"Resolved path: {codex_path}\n"
+            "Check that this file exists and is executable."
+        ) from exc
+
     returncode = await proc.wait()
     if returncode != 0:
         raise RuntimeError(
             "Codex CLI is not authenticated. "
-            "Run `echo $OPENAI_API_KEY | codex login --with-api-key` (or the "
-            "equivalent for your shell) before starting the TUI."
+            "Run `echo $OPENAI_API_KEY | codex login --with-api-key` and then "
+            "`codex login status`."
         )
 
 
@@ -100,10 +110,11 @@ class CodexMCP:
             return
 
         await ensure_codex_logged_in()
+        codex_path = ensure_codex_present()
 
         LOG.info("Starting codex mcp-server")
         self._proc = await asyncio.create_subprocess_exec(
-            "codex",
+            codex_path,
             "mcp-server",
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,

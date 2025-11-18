@@ -20,6 +20,10 @@ Prerequisites:
 - The `codex` command should be available if you use `--run-codex` or the TUI.
 - Codex CLI must be logged in: run `echo $OPENAI_API_KEY | codex login --with-api-key` once before using the TUI.
 
+On all platforms, the Codex CLI path is resolved once using your `PATH` and that full path is reused for subprocess calls.
+This improves robustness on Windows (especially when shims/launchers are involved) and produces clearer errors if the
+resolved `codex` binary cannot be executed or is not authenticated.
+
 ## Commands
 
 - `uv sync` – install dependencies defined in `pyproject.toml`
