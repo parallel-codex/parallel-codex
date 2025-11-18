@@ -62,7 +62,12 @@ def ensure_session_worktree(
     repo_root = repo_root.resolve()
     agents_base = agents_base.resolve()
     if not (repo_root / ".git").exists():
-        raise WorktreeError(f"{repo_root} does not look like a git repository (no .git found)")
+        raise WorktreeError(
+            f"{repo_root} does not look like a git repository (no .git found). "
+            "Ensure you are pointing at the root of your git repo (for example by "
+            "running from the repo root, passing --repo, or setting "
+            "PARALLEL_CODEX_REPO_ROOT)."
+        )
 
     target_dir = agents_base / session_name
     target_dir.parent.mkdir(parents=True, exist_ok=True)
