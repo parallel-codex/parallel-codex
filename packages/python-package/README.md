@@ -20,28 +20,29 @@ Prerequisites:
 - The `codex` command should be available if you use `--run-codex` or the TUI.
 - Codex CLI must be logged in: run `echo $OPENAI_API_KEY | codex login --with-api-key` once before using the TUI.
 
-On all platforms, the Codex CLI path is resolved once using your `PATH` and that full path is reused for subprocess calls.
-This improves robustness on Windows (especially when shims/launchers are involved) and produces clearer errors if the
-resolved `codex` binary cannot be executed or is not authenticated.
+On all platforms, the Codex CLI path is resolved once (from `PARALLEL_CODEX_CODEX_PATH` if set, otherwise from your
+`PATH`) and that full path is reused for subprocess calls. This improves robustness on Windows (especially when
+shims/launchers are involved) and produces clearer errors if the resolved `codex` binary cannot be executed or is not
+authenticated. For unusual setups (for example, npm-style shims on Windows), you can point directly at the Codex
+binary via `PARALLEL_CODEX_CODEX_PATH`:
 
-## Commands
+```bash
+# POSIX shells (macOS, Linux, WSL, Git Bash)
+export PARALLEL_CODEX_CODEX_PATH=/full/path/to/codex
+# Windows (cmd.exe)
+set PARALLEL_CODEX_CODEX_PATH=C:\Users\you\AppData\Roaming\npm\codex.CMD
+# Windows (PowerShell)
+$env:PARALLEL_CODEX_CODEX_PATH="C:\Users\you\AppData\Roaming\npm\codex.CMD"
+```
 
-- `uv sync` – install dependencies defined in `pyproject.toml`
-- `uv build` – build a wheel and sdist using Hatchling
-- `uv run pytest` – execute the test suite
+## Development commands
+
+From `packages/python-package`, common development commands are:
+
+- `uv sync` – install dependencies
+- `uv run pytest` – run tests
 - `uv run ruff check .` – lint the codebase
-- `uv run mypy src/` – run type checking with MyPy
-
-## Release Checklist
-
-**Note:** This is the primary package. Publishing is fully implemented and working.
-
-1. Update the `version` field in `pyproject.toml`.
-2. Commit and push the changes.
-3. Tag the commit with `py-vX.Y.Z` (or `vX.Y.Z`) and push the tag to trigger the GitHub Actions publish workflow.
-4. Confirm the new release appears on [PyPI](https://pypi.org/project/parallel-codex/).
-
-Once the core logic is complete, npm and Homebrew wrappers will be developed to provide alternative installation methods.
+- `uv run mypy src/` – type-check the code
 
 ## CLI Usage (quickstart)
 
@@ -54,13 +55,49 @@ pcodex prune reviewer --kill-session --remove-dir
 
 ## CLI Usage (development, no install)
 
-Run the CLIs without installing the package:
+Run the CLIs without installing the package.
+
+### From the Python package directory (all platforms)
+
+Change into the Python package directory first:
 
 ```bash
+cd packages/python-package
 uv run src/main.py plan reviewer main --base-dir ./.agents
 # or the single-file helper:
 uv run src/parallel_codex/pcodex.py up reviewer main --run-codex --attach
 ```
+
+On **Windows with cmd.exe**, the equivalent is:
+
+```cmd
+cd C:\path\to\parallel-codex\packages\python-package
+uv run python src\main.py plan reviewer main --base-dir .\.agents
+uv run python src\parallel_codex\pcodex.py up reviewer main --run-codex --attach
+```
+
+These commands assume your **current working directory is `packages/python-package`**.  
+If you prefer to stay in the monorepo root (like this repository layout), use the
+`uv --project` style commands below instead.
+
+### From the monorepo root with `uv --project` (recommended for this repo)
+
+When working in this repository from the **top-level git root**, you can run the CLI
+via the installed package entry point instead of referencing `src/` paths directly:
+
+```bash
+uv run --project packages/python-package python -m parallel_codex.cli plan reviewer main --base-dir ./.agents
+```
+
+On **Windows with cmd.exe** (the common case for this project):
+
+```cmd
+cd C:\path\to\parallel-codex
+uv run --project packages\python-package python -m parallel_codex.cli plan reviewer main --base-dir .\.agents
+```
+
+This avoids `FileNotFoundError` issues that occur when mixing `--project` with
+relative `src/...` paths from the wrong working directory.
 
 The published CLIs expose sub-commands:
 
@@ -106,6 +143,42 @@ Per-session worktrees:
 - For each new session `session-N`, the TUI creates or reuses a branch like `pcx/session-N` and a worktree under `./.agents/session-N`.
 - Codex runs with `workspace_path` pointing at that worktree, so all file edits are isolated per session.
 - You can manually mix changes between sessions later using normal git operations (e.g. `git merge pcx/session-1` from another branch).
+
+#### Env-based TUI defaults
+
+By default, `parallel-codex tui` assumes that `--repo` points at the current working directory. For development
+workflows where the Python package lives inside a larger git repo, you can use `PARALLEL_CODEX_REPO_ROOT` to point the
+TUI at the real git root without changing your CWD:
+
+```bash
+# POSIX shells (macOS, Linux, WSL, Git Bash)
+export PARALLEL_CODEX_REPO_ROOT=/path/to/your/parallel-codex
+parallel-codex tui
+```
+
+When running the TUI via `uv run` inside this repository, this allows you to keep `--project` pointing at the
+`packages/python-package` subdirectory while still using the top-level git repo as the TUI repo root:
+
+```bash
+# Recommended on Windows/monorepo setups (POSIX example shown here):
+export PARALLEL_CODEX_REPO_ROOT=/path/to/your/parallel-codex
+uv run --project packages/python-package python -m parallel_codex.cli tui
+```
+
+On **Windows with cmd.exe**, use `set` instead of `export`:
+
+```cmd
+REM Recommended first step when developing on Windows in this repo:
+set PARALLEL_CODEX_REPO_ROOT=C:\path\to\your\parallel-codex
+uv run --project packages\python-package python -m parallel_codex.cli tui
+```
+
+On **Windows with PowerShell**, use the `$env:` prefix:
+
+```powershell
+$env:PARALLEL_CODEX_REPO_ROOT = "C:\path\to\your\parallel-codex"
+uv run --project packages\python-package python -m parallel_codex.cli tui
+```
 
 ## Library Usage
 

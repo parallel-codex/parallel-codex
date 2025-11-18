@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import shutil
 import sys
 from collections import deque
@@ -21,7 +22,15 @@ LOG = logging.getLogger(__name__)
 
 
 def ensure_codex_present() -> str:
-    """Return the path to the `codex` CLI, or raise if not found."""
+    """Return the path to the `codex` CLI, or raise if not found.
+
+    The path is resolved from the PARALLEL_CODEX_CODEX_PATH environment
+    variable if set, otherwise from the user's PATH.
+    """
+
+    override = os.environ.get("PARALLEL_CODEX_CODEX_PATH")
+    if override:
+        return override
 
     path = shutil.which("codex")
     if path is None:

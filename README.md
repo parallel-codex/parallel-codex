@@ -62,6 +62,37 @@ Dev without installing:
 uv run packages/python-package/src/parallel_codex/pcodex.py up reviewer main --run-codex --attach
 ```
 
+### Dev TUI (Python package)
+
+To develop and run the Textual TUI from this monorepo without installing the package, configure the repo root via an
+environment variable and use the Python package as the `uv` project:
+
+```bash
+# POSIX shells (macOS, Linux, WSL, Git Bash) – set once in your shell profile
+export PARALLEL_CODEX_REPO_ROOT=/path/to/this/parallel-codex/checkout
+
+# Then, from anywhere:
+uv run --project packages/python-package python -m parallel_codex.cli tui
+```
+
+On **Windows with cmd.exe**, use `set` instead of `export`:
+
+```cmd
+set PARALLEL_CODEX_REPO_ROOT=C:\path\to\this\parallel-codex\checkout
+uv run --project packages\python-package python -m parallel_codex.cli tui
+```
+
+On **Windows with PowerShell**, use the `$env:` prefix:
+
+```powershell
+$env:PARALLEL_CODEX_REPO_ROOT = "C:\path\to\this\parallel-codex\checkout"
+uv run --project packages\python-package python -m parallel_codex.cli tui
+```
+
+This keeps the TUI’s `--repo` pointing at your actual git root while `uv` still runs against the `packages/python-package`
+project. See `packages/python-package/README.md` for more details on `PARALLEL_CODEX_REPO_ROOT` and the optional
+`PARALLEL_CODEX_CODEX_PATH` override used to locate the `codex` CLI.
+
 Advanced CLI (original):
 
 Run `parallel-codex --help` after installation to explore planning/listing/pruning worktree metadata used by higher-level tooling.

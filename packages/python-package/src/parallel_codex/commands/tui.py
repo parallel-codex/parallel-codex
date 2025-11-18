@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from argparse import ArgumentParser, Namespace, _SubParsersAction
 from pathlib import Path
 
@@ -16,8 +17,11 @@ def register(subparsers: _SubParsersAction[ArgumentParser]) -> None:
     parser.add_argument(
         "--repo",
         type=Path,
-        default=Path("."),
-        help="Path to the main git repository (default: current directory)",
+        default=Path(os.environ.get("PARALLEL_CODEX_REPO_ROOT", ".")),
+        help=(
+            "Path to the main git repository (default: current directory or "
+            "$PARALLEL_CODEX_REPO_ROOT if set)"
+        ),
     )
     parser.add_argument(
         "--agents-base",
