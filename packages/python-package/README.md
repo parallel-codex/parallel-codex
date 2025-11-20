@@ -133,10 +133,9 @@ parallel-codex tui \
 Keyboard shortcuts:
 
 - `Ctrl+N` – create a new session (up to three visible side by side; further sessions can be managed but are currently hidden from the main row).
-- `Ctrl+Tab` – cycle focused session.
-- `Ctrl+1/2/3` – focus one of the first three panes.
+- `Ctrl+Tab` – cycle focused session (and move the caret to that session's input).
 - `Ctrl+W` – close the focused session.
-- `Esc` – focus the prompt input.
+- `Esc` – focus the input of the currently focused session.
 
 Per-session worktrees:
 

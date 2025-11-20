@@ -5,8 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Horizontal, VerticalScroll
+from textual.containers import Horizontal, Vertical, VerticalScroll
+from textual.css.query import NoMatches
 from textual.message import Message
 from textual.reactive import reactive
 from textual.widgets import Input, Markdown, Static
@@ -24,8 +26,8 @@ class MarkdownMessage(Markdown):
     pass
 
 
-class SessionPane(VerticalScroll):
-    """Scrollable pane that renders the history for a single session."""
+class SessionPane(Vertical):
+    """Pane that holds a scrollable history and its own input."""
 
     label = reactive("Session")
     is_focused = reactive(False)
@@ -42,14 +44,36 @@ class SessionPane(VerticalScroll):
         self.label = name
         self.border_title = name
 
+    def compose(self) -> ComposeResult:
+        """Compose the scrollable message area and per-session input."""
+
+        yield VerticalScroll(id=f"{self.id}-messages")
+        yield Input(placeholder="...", id=f"{self.id}-input", classes="session-input")
+
     def watch_is_focused(self, value: bool) -> None:
         self.border_title = f"[bold]{self.label}[/bold]" if value else self.label
 
+    def _messages_container(self) -> VerticalScroll:
+        return self.query_one(VerticalScroll)
+
+    def _input_widget(self) -> Input | None:
+        try:
+            return self.query_one(Input)
+        except NoMatches:
+            return None
+
     def add_user_message(self, text: str) -> None:
-        self.mount(UserMessage(text))
+        self._messages_container().mount(UserMessage(text))
 
     def add_markdown_message(self, text: Any) -> None:
-        self.mount(MarkdownMessage(_normalize_markdown_content(text)))
+        self._messages_container().mount(MarkdownMessage(_normalize_markdown_content(text)))
+
+    def focus_input(self) -> None:
+        """Move keyboard focus into this session's input, if present."""
+
+        input_widget = self._input_widget()
+        if input_widget is not None:
+            input_widget.focus()
 
 
 class SessionRow(Horizontal):
@@ -57,39 +81,6 @@ class SessionRow(Horizontal):
 
     def __init__(self) -> None:
         super().__init__(id="session-row")
-
-
-class PromptTextArea(Input):
-    """Single-line input that emits a Submitted message.
-
-    This uses Textual's ``Input`` widget internally to avoid
-    issues observed with ``TextArea`` rendering in some environments.
-    """
-
-    def __init__(self, *args, placeholder: str | None = None, **kwargs) -> None:
-        super().__init__(*args, placeholder=placeholder or "", **kwargs)
-
-    @dataclass
-    class Submitted(Message):
-        """Posted when the user submits the prompt via Ctrl+Enter."""
-
-        text_area: "PromptTextArea"
-        value: str
-
-        @property
-        def control(self) -> "PromptTextArea":
-            return self.text_area
-
-    # Inherit all existing Input keybindings, plus Ctrl+Enter for submit.
-    BINDINGS = [
-        *Input.BINDINGS,
-        Binding("ctrl+enter", "submit", "Submit", show=False),
-    ]
-
-    def action_submit(self) -> None:
-        """Action invoked by the Ctrl+Enter binding."""
-
-        self.post_message(self.Submitted(self, self.value))
 
 
 def _normalize_markdown_content(value: Any) -> str:

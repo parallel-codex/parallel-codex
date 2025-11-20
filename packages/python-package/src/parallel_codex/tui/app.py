@@ -10,13 +10,13 @@ from typing import Optional
 from textual import on
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Horizontal, Vertical
-from textual.widgets import Footer, Static
+from textual.containers import Vertical
+from textual.widgets import Footer, Input, Static
 
 from ..mcp_client import CodexEvent, CodexMCP, configure_logging
 from ..worktrees import SessionWorktree, ensure_session_worktree
 from .session_manager import SessionManager
-from .widgets import PromptTextArea, SessionPane, SessionRow
+from .widgets import SessionPane, SessionRow
 
 
 @dataclass(slots=True)
@@ -39,26 +39,17 @@ class ParallelCodexApp(App[None]):
         height: 1fr;
     }
 
-    #input-bar {
+    .session-input {
         height: 3;
-    }
-
-    #prompt-label {
-        width: auto;
-    }
-
-    #prompt-input {
-        width: 1fr;
-        min-width: 20;
+        border: none;
+        padding: 0 1;
+        background: $surface;
     }
     """
 
     BINDINGS = [
         Binding("ctrl+n", "new_session", "New session"),
         Binding("ctrl+tab", "cycle_session", "Next session"),
-        Binding("ctrl+1", "focus_session_1", "Session 1"),
-        Binding("ctrl+2", "focus_session_2", "Session 2"),
-        Binding("ctrl+3", "focus_session_3", "Session 3"),
         Binding("ctrl+w", "close_session", "Close session"),
         Binding("escape", "focus_input", "Focus input"),
     ]
@@ -92,12 +83,6 @@ class ParallelCodexApp(App[None]):
     def compose(self) -> ComposeResult:
         with Vertical():
             yield SessionRow()
-            with Horizontal(id="input-bar"):
-                yield Static("Prompt:", id="prompt-label")
-                yield PromptTextArea(
-                    placeholder="Type your prompt",
-                    id="prompt-input",
-                )
         yield Footer()
 
     # ------------------------------------------------------------------
@@ -156,22 +141,27 @@ class ParallelCodexApp(App[None]):
     # ------------------------------------------------------------------
     async def action_new_session(self) -> None:
         await self._ensure_session()
+        self._focus_current_input()
 
     def action_cycle_session(self) -> None:
         self._sessions.cycle_focus(forward=True)
         self._update_focus_visuals()
+        self._focus_current_input()
 
     def action_focus_session_1(self) -> None:
         self._sessions.focus_by_index(0)
         self._update_focus_visuals()
+        self._focus_current_input()
 
     def action_focus_session_2(self) -> None:
         self._sessions.focus_by_index(1)
         self._update_focus_visuals()
+        self._focus_current_input()
 
     def action_focus_session_3(self) -> None:
         self._sessions.focus_by_index(2)
         self._update_focus_visuals()
+        self._focus_current_input()
 
     def action_close_session(self) -> None:
         focused = self._sessions.focused
@@ -183,23 +173,35 @@ class ParallelCodexApp(App[None]):
             pane.remove()
         self._sessions.close_session(focused.name)
         self._update_focus_visuals()
+        self._focus_current_input()
+
+    def _focus_current_input(self) -> None:
+        pane = self._get_focused_pane()
+        if pane is not None:
+            pane.focus_input()
 
     def action_focus_input(self) -> None:
-        self.query_one("#prompt-input", PromptTextArea).focus()
+        self._focus_current_input()
 
     # ------------------------------------------------------------------
     # Input handling
     # ------------------------------------------------------------------
-    @on(PromptTextArea.Submitted, "#prompt-input")
-    async def _on_prompt_submitted(self, event: PromptTextArea.Submitted) -> None:
+    @on(Input.Submitted)
+    async def _on_prompt_submitted(self, event: Input.Submitted) -> None:
         prompt = event.value.strip()
         if not prompt:
             return
-        event.text_area.text = ""
+        event.input.value = ""
 
-        pane = self._get_focused_pane()
+        pane = event.input.query_ancestor(SessionPane)
         if pane is None:
-            pane = await self._ensure_session()
+            return
+
+        # Ensure session focus follows the pane where input occurred.
+        if pane.id is not None:
+            self._sessions.focus(pane.id)
+            self._update_focus_visuals()
+
         pane.add_user_message(prompt)
 
         model = self._sessions.focused
