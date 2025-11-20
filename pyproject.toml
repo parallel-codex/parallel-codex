@@ -1,2 +1,7 @@
 [tool.uv.workspace]
 members = ["packages/python-package"]
+
+[dependency-groups]
+dev = [
+    "textual",
+]

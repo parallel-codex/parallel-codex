@@ -7,6 +7,9 @@ members = [
     "parallel-codex",
 ]
 
+[manifest.dependency-groups]
+dev = [{ name = "textual" }]
+
 [[package]]
 name = "colorama"
 version = "0.4.6"
@@ -253,7 +256,7 @@ requires-dist = [
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.1.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.1.0" },
-    { name = "textual", specifier = ">=0.60.0" },
+    { name = "textual", specifier = "==6.6.0" },
 ]
 provides-extras = ["dev"]
 

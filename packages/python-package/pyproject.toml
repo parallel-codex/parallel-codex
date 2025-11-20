@@ -19,7 +19,7 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
 ]
 dependencies = [
-    "textual>=0.60.0",
+    "textual==6.6.0",
 ]
 
 [project.optional-dependencies]

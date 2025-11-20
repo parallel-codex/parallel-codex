@@ -42,6 +42,15 @@ class ParallelCodexApp(App[None]):
     #input-bar {
         height: 3;
     }
+
+    #prompt-label {
+        width: auto;
+    }
+
+    #prompt-input {
+        width: 1fr;
+        min-width: 20;
+    }
     """
 
     BINDINGS = [
@@ -86,7 +95,7 @@ class ParallelCodexApp(App[None]):
             with Horizontal(id="input-bar"):
                 yield Static("Prompt:", id="prompt-label")
                 yield PromptTextArea(
-                    placeholder="Type your prompt (Ctrl+Enter to submit)",
+                    placeholder="Type your prompt",
                     id="prompt-input",
                 )
         yield Footer()
@@ -261,5 +270,3 @@ class ParallelCodexApp(App[None]):
                 self.log(f"Session configured: {model.name} -> {session_id}")
 
             # Progress and other notifications can be surfaced later.
-
-

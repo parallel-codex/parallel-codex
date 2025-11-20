@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from textual.binding import Binding
 from textual.containers import Horizontal, VerticalScroll
 from textual.message import Message
 from textual.reactive import reactive
-from textual.widgets import Markdown, Static, TextArea
+from textual.widgets import Input, Markdown, Static
 
 
 class UserMessage(Static):
@@ -47,8 +48,8 @@ class SessionPane(VerticalScroll):
     def add_user_message(self, text: str) -> None:
         self.mount(UserMessage(text))
 
-    def add_markdown_message(self, text: str) -> None:
-        self.mount(MarkdownMessage(text))
+    def add_markdown_message(self, text: Any) -> None:
+        self.mount(MarkdownMessage(_normalize_markdown_content(text)))
 
 
 class SessionRow(Horizontal):
@@ -58,11 +59,15 @@ class SessionRow(Horizontal):
         super().__init__(id="session-row")
 
 
-class PromptTextArea(TextArea):
-    """TextArea that emits a Submitted message on Ctrl+Enter.
+class PromptTextArea(Input):
+    """Single-line input that emits a Submitted message.
 
-    This allows multi-line input while providing an explicit submit gesture.
+    This uses Textual's ``Input`` widget internally to avoid
+    issues observed with ``TextArea`` rendering in some environments.
     """
+
+    def __init__(self, *args, placeholder: str | None = None, **kwargs) -> None:
+        super().__init__(*args, placeholder=placeholder or "", **kwargs)
 
     @dataclass
     class Submitted(Message):
@@ -75,14 +80,35 @@ class PromptTextArea(TextArea):
         def control(self) -> "PromptTextArea":
             return self.text_area
 
-    # Inherit all existing TextArea keybindings, plus Ctrl+Enter for submit.
+    # Inherit all existing Input keybindings, plus Ctrl+Enter for submit.
     BINDINGS = [
-        *TextArea.BINDINGS,
+        *Input.BINDINGS,
         Binding("ctrl+enter", "submit", "Submit", show=False),
     ]
 
     def action_submit(self) -> None:
         """Action invoked by the Ctrl+Enter binding."""
 
-        self.post_message(self.Submitted(self, self.text))
+        self.post_message(self.Submitted(self, self.value))
 
+
+def _normalize_markdown_content(value: Any) -> str:
+    """Convert Codex-style content payloads into markdown strings."""
+
+    if isinstance(value, str):
+        return value
+
+    if isinstance(value, list):
+        parts: list[str] = []
+        for item in value:
+            if isinstance(item, dict):
+                text = item.get("text")
+                if isinstance(text, str):
+                    parts.append(text)
+                else:
+                    parts.append(str(item))
+            else:
+                parts.append(str(item))
+        return "".join(parts)
+
+    return str(value)
