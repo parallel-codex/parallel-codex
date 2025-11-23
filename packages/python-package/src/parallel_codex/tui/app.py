@@ -33,17 +33,60 @@ class ParallelCodexApp(App[None]):
     CSS = """
     Screen {
         layout: vertical;
+        background: #050301;
     }
 
     #session-row {
         height: 1fr;
+        padding: 0 1;
+        background: #050301;
+    }
+
+    .session-pane {
+        padding: 0 1 0 1;
+        border: solid #2c1c0c;
+        background: #080503;
+        margin-right: 1;
+    }
+
+    .session-pane:last-child {
+        margin-right: 0;
+    }
+
+    .session-pane--focused {
+        border: solid #f28c28;
+    }
+
+    .session-messages {
+        height: 1fr;
+        padding: 0 1 0 1;
+        border: solid #1a1007;
+        background: #050301;
+    }
+
+    .message {
+        padding: 0 1;
+        margin-bottom: 1;
+        border: solid #2c1c0c;
+        background: #0d0804;
+    }
+
+    .message-user {
+        border: solid #f28c28;
+        background: #201105;
+    }
+
+    .message-assistant {
+        border: solid #3a2610;
+        background: #110804;
     }
 
     .session-input {
         height: 3;
-        border: none;
+        border: solid #f28c28;
         padding: 0 1;
-        background: $surface;
+        margin: 0 1 1 1;
+        background: #050301;
     }
     """
 
