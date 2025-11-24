@@ -102,9 +102,10 @@ async def test_logging_notification_updates_tracker(monkeypatch: pytest.MonkeyPa
     assert event.event_type == CodexEventType.LOGGING
     assert event.related_request_id == "req-1"
 
-    notifications = tracker.get_intermediate_events("req-1")
-    assert len(notifications) == 1
-    assert notifications[0].event_type == CodexEventType.LOGGING
+    timeline = tracker.get_request_timeline("req-1")
+    assert timeline is not None
+    assert len(timeline.notifications) == 1
+    assert timeline.notifications[0].event_type == CodexEventType.LOGGING
 
     reader.cancel()
     try:
@@ -157,7 +158,6 @@ async def test_responses_published_to_global_queue(monkeypatch: pytest.MonkeyPat
     timeline = tracker.get_request_timeline("1")
     assert timeline is not None
     assert timeline.response == payload
-    assert tracker.conversation_map["conv-1"] == ["1"]
 
     reader.cancel()
     try:

@@ -126,8 +126,6 @@ class CodexEventTracker:
 
     def __init__(self) -> None:
         self._timelines: Dict[str, RequestTimeline] = {}
-        self._intermediate_events: Dict[str, List[TrackedNotification]] = {}
-        self.conversation_map: Dict[str, List[str]] = {}
 
     # ------------------------------------------------------------------
     # Request lifecycle helpers
@@ -165,7 +163,6 @@ class CodexEventTracker:
         timeline.notifications.append(notification)
         if notification.session_id and timeline.session_id is None:
             timeline.session_id = notification.session_id
-        self._intermediate_events.setdefault(request_id, []).append(notification)
 
     def track_response(
         self,
@@ -182,21 +179,10 @@ class CodexEventTracker:
         if session_id:
             timeline.session_id = session_id
 
-        result = message.get("result")
-        if isinstance(result, dict):
-            conversation_id = (
-                result.get("conversationId")
-                or result.get("conversation_id")
-                or result.get("conversationID")
-            )
-            if conversation_id:
-                self.conversation_map.setdefault(conversation_id, []).append(request_id)
 
     def get_request_timeline(self, request_id: str) -> Optional[RequestTimeline]:
         return self._timelines.get(request_id)
 
-    def get_intermediate_events(self, request_id: str) -> List[TrackedNotification]:
-        return list(self._intermediate_events.get(request_id, []))
 
 
 
