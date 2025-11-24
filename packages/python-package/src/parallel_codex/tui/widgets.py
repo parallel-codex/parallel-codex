@@ -27,6 +27,13 @@ class MarkdownMessage(Markdown):
         super().__init__(markdown, **kwargs)
 
 
+class EventMessage(Static):
+    """System/status message emitted by the MCP server."""
+
+    def __init__(self, text: str, **kwargs: Any) -> None:
+        super().__init__(text, markup=True, **kwargs)
+
+
 class SessionPane(Vertical):
     """Pane that holds a scrollable history and its own input."""
 
@@ -87,6 +94,9 @@ class SessionPane(Vertical):
                 classes="message message-assistant",
             )
         )
+
+    def add_event_message(self, text: str) -> None:
+        self._append_message(EventMessage(text, classes="message message-event"))
 
     def focus_input(self) -> None:
         """Move keyboard focus into this session's input, if present."""

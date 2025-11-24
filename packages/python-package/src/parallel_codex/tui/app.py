@@ -3,17 +3,18 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+from rich.markup import escape
 from textual import on
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Vertical
 from textual.widgets import Footer, Input, Static
 
-from ..mcp_client import CodexEvent, CodexMCP, configure_logging
+from ..mcp_client import CodexEvent, CodexEventType, CodexMCP, configure_logging
 from ..worktrees import SessionWorktree, ensure_session_worktree
 from .session_manager import SessionManager
 from .widgets import SessionPane, SessionRow
@@ -79,6 +80,12 @@ class ParallelCodexApp(App[None]):
     .message-assistant {
         border: solid #3a2610;
         background: #110804;
+    }
+
+    .message-event {
+        border: dashed #3a2610;
+        background: #0a0502;
+        color: #d0b089;
     }
 
     .session-input {
@@ -166,9 +173,12 @@ class ParallelCodexApp(App[None]):
         focused = self._sessions.focused
         if focused is None:
             return None
+        return self._get_pane_by_name(focused.name)
+
+    def _get_pane_by_name(self, name: str) -> Optional[SessionPane]:
         row = self.query_one(SessionRow)
         for pane in row.children:
-            if isinstance(pane, SessionPane) and pane.id == focused.name:
+            if isinstance(pane, SessionPane) and pane.id == name:
                 return pane
         return None
 
@@ -301,6 +311,10 @@ class ParallelCodexApp(App[None]):
         while True:
             event: CodexEvent = await queue.get()
             method = event.raw.get("method")
+            self.log(
+                f"MCP event: type={event.event_type} method={method!r} "
+                f"is_notification={event.is_notification} raw={event.raw}"
+            )
 
             if method == "session_configured":
                 session_id = event.session_id
@@ -313,5 +327,124 @@ class ParallelCodexApp(App[None]):
                     continue
                 model.session_id = session_id
                 self.log(f"Session configured: {model.name} -> {session_id}")
+                continue
 
-            # Progress and other notifications can be surfaced later.
+            if event.event_type == CodexEventType.PROGRESS:
+                self.log(f"MCP progress event: {event.raw}")
+                self._handle_progress_notification(event)
+                continue
+
+            if event.event_type == CodexEventType.LOGGING:
+                self.log(f"MCP logging event: {event.raw}")
+                self._handle_logging_notification(event)
+                continue
+
+            # Any other notification types are surfaced as generic events so that
+            # intermediate activity is still visible in the UI and logs.
+            if event.is_notification:
+                self.log(f"MCP notification event (unhandled): {event.raw}")
+                self._handle_generic_notification(event)
+                continue
+
+    def _pane_for_event(self, event: CodexEvent) -> Optional[SessionPane]:
+        """Resolve which session pane should render a notification."""
+
+        session_id = event.session_id
+        if session_id is None and event.related_request_id is not None:
+            timeline = self._mcp.event_tracker.get_request_timeline(event.related_request_id)
+            if timeline is not None:
+                session_id = timeline.session_id
+
+        if session_id is None:
+            sessions = self._sessions.all_sessions()
+            if len(sessions) == 1:
+                return self._get_pane_by_name(sessions[0].name)
+            focused = self._get_focused_pane()
+            if focused is not None:
+                return focused
+            if sessions:
+                return self._get_pane_by_name(sessions[0].name)
+            return None
+
+        model = self._sessions.find_by_session_id(session_id)
+        if model is None:
+            return None
+
+        return self._get_pane_by_name(model.name)
+
+    def _notification_payload(self, event: CodexEvent) -> dict:
+        params = event.raw.get("params") or {}
+        msg = params.get("msg")
+        if isinstance(msg, dict):
+            return msg
+        return params
+
+    def _handle_progress_notification(self, event: CodexEvent) -> None:
+        pane = self._pane_for_event(event)
+        if pane is None:
+            self.log(f"Discarding progress event; no pane available: {event.raw}")
+            return
+
+        payload = self._notification_payload(event)
+        progress = payload.get("progress") or payload.get("current")
+        total = payload.get("total") or payload.get("max")
+        message = payload.get("message") or payload.get("data") or "Working..."
+
+        pct = self._percent_complete(progress, total)
+        safe_message = escape(str(message))
+        pane.add_event_message(f"[bold yellow]PROGRESS[/] {pct}% {safe_message}")
+
+    def _handle_logging_notification(self, event: CodexEvent) -> None:
+        pane = self._pane_for_event(event)
+        if pane is None:
+            self.log(f"Discarding logging event; no pane available: {event.raw}")
+            return
+
+        payload = self._notification_payload(event)
+        level = str(payload.get("level", "info")).upper()
+        data = payload.get("data") or payload.get("message") or ""
+        snippet = escape(self._truncate(str(data)))
+        pane.add_event_message(f"[cyan]{level}[/] {snippet}")
+
+    def _handle_generic_notification(self, event: CodexEvent) -> None:
+        """Render generic MCP notifications that are not classified as progress/logging."""
+
+        pane = self._pane_for_event(event)
+        if pane is None:
+            self.log(f"Discarding generic event; no pane available: {event.raw}")
+            return
+
+        payload = self._notification_payload(event)
+        method = str(event.raw.get("method", "notification"))
+        message = (
+            payload.get("message")
+            or payload.get("data")
+            or payload.get("msg")
+            or payload.get("text")
+            or payload
+        )
+        snippet = escape(self._truncate(str(message)))
+        pane.add_event_message(f"[magenta]{method}[/] {snippet}")
+
+    @staticmethod
+    def _percent_complete(progress: Optional[float], total: Optional[float]) -> int:
+        try:
+            progress_val = float(progress if progress is not None else 0)
+            total_val = float(total) if total not in (None, 0) else None
+        except (TypeError, ValueError):
+            return 0
+
+        if total_val is None:
+            return int(progress_val)
+
+        if total_val <= 0:
+            return 0
+
+        ratio = max(0.0, min(1.0, progress_val / total_val))
+        return int(ratio * 100)
+
+    @staticmethod
+    def _truncate(value: str, limit: int = 96) -> str:
+        if len(value) <= limit:
+            return value
+        return value[: limit - 3].rstrip() + "..."

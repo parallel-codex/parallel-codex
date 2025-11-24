@@ -6,7 +6,13 @@ from typing import Any, Dict
 
 import pytest
 
-from parallel_codex.mcp_client import CodexEvent, CodexMCP, ensure_codex_present
+from parallel_codex.mcp_client import (
+    CodexEvent,
+    CodexEventType,
+    CodexMCP,
+    PendingCall,
+    ensure_codex_present,
+)
 
 
 class DummyStdout:
@@ -54,10 +60,178 @@ async def test_global_event_queue_receives_notifications(monkeypatch: pytest.Mon
 
     event: CodexEvent = await asyncio.wait_for(client.get_global_event_queue().get(), timeout=1.0)
     assert event.session_id == "abc-123"
+    assert event.event_type == CodexEventType.NOTIFICATION
 
     reader.cancel()
-    with pytest.raises(asyncio.CancelledError):
+    try:
         await reader
+    except asyncio.CancelledError:
+        pass
+
+
+@pytest.mark.asyncio()
+async def test_logging_notification_updates_tracker(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = CodexMCP()
+
+    stdout = DummyStdout()
+    client._proc = DummyProc(stdout)  # type: ignore[assignment]
+    reader = asyncio.create_task(client._reader_loop())  # type: ignore[arg-type]
+
+    tracker = client.event_tracker
+    tracker.track_outgoing_request(
+        "req-1",
+        method="codex",
+        params={"name": "codex"},
+        session_hint=None,
+        timestamp=asyncio.get_running_loop().time(),
+    )
+
+    payload = {
+        "jsonrpc": "2.0",
+        "method": "notifications/logging/message",
+        "params": {
+            "related_request_id": "req-1",
+            "level": "info",
+            "data": "Starting...",
+        },
+    }
+    await stdout.push_json(payload)
+    await stdout._queue.put(b"")
+
+    event: CodexEvent = await asyncio.wait_for(client.get_global_event_queue().get(), timeout=1.0)
+    assert event.event_type == CodexEventType.LOGGING
+    assert event.related_request_id == "req-1"
+
+    notifications = tracker.get_intermediate_events("req-1")
+    assert len(notifications) == 1
+    assert notifications[0].event_type == CodexEventType.LOGGING
+
+    reader.cancel()
+    try:
+        await reader
+    except asyncio.CancelledError:
+        pass
+
+
+@pytest.mark.asyncio()
+async def test_responses_published_to_global_queue(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = CodexMCP()
+
+    stdout = DummyStdout()
+    client._proc = DummyProc(stdout)  # type: ignore[assignment]
+
+    loop = asyncio.get_running_loop()
+    future: "asyncio.Future[Dict[str, Any]]" = loop.create_future()
+    client._pending[1] = PendingCall(
+        request_id=1,
+        method_name="codex",
+        session_hint="session-123",
+        future=future,
+    )
+
+    tracker = client.event_tracker
+    tracker.track_outgoing_request(
+        "1",
+        method="codex",
+        params={"name": "codex"},
+        session_hint="session-123",
+        timestamp=loop.time(),
+    )
+
+    reader = asyncio.create_task(client._reader_loop())  # type: ignore[arg-type]
+
+    payload = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {"content": "ok", "conversationId": "conv-1"},
+    }
+    await stdout.push_json(payload)
+    await stdout._queue.put(b"")
+
+    event: CodexEvent = await asyncio.wait_for(client.get_global_event_queue().get(), timeout=1.0)
+    assert event.event_type == CodexEventType.RESPONSE
+    assert event.request_id == "1"
+    assert future.done()
+    assert future.result() == payload["result"]
+
+    timeline = tracker.get_request_timeline("1")
+    assert timeline is not None
+    assert timeline.response == payload
+    assert tracker.conversation_map["conv-1"] == ["1"]
+
+    reader.cancel()
+    try:
+        await reader
+    except asyncio.CancelledError:
+        pass
+
+
+@pytest.mark.asyncio()
+async def test_notifications_with_null_id_are_processed(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = CodexMCP()
+
+    stdout = DummyStdout()
+    client._proc = DummyProc(stdout)  # type: ignore[assignment]
+    reader = asyncio.create_task(client._reader_loop())  # type: ignore[arg-type]
+
+    payload = {
+        "jsonrpc": "2.0",
+        "id": None,
+        "method": "notifications/progress",
+        "params": {
+            "related_request_id": "req-99",
+            "progress": 10,
+            "total": 100,
+        },
+    }
+    await stdout.push_json(payload)
+    await stdout._queue.put(b"")
+
+    event: CodexEvent = await asyncio.wait_for(client.get_global_event_queue().get(), timeout=1.0)
+    assert event.event_type == CodexEventType.PROGRESS
+    assert event.related_request_id == "req-99"
+
+    reader.cancel()
+    try:
+        await reader
+    except asyncio.CancelledError:
+        pass
+
+
+@pytest.mark.asyncio()
+async def test_error_responses_reject_pending_calls(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = CodexMCP()
+
+    stdout = DummyStdout()
+    client._proc = DummyProc(stdout)  # type: ignore[assignment]
+
+    loop = asyncio.get_running_loop()
+    future: "asyncio.Future[Dict[str, Any]]" = loop.create_future()
+    client._pending[42] = PendingCall(
+        request_id=42,
+        method_name="codex",
+        session_hint=None,
+        future=future,
+    )
+
+    reader = asyncio.create_task(client._reader_loop())  # type: ignore[arg-type]
+
+    payload = {
+        "jsonrpc": "2.0",
+        "id": 42,
+        "error": {"code": 500, "message": "internal"},
+    }
+    await stdout.push_json(payload)
+    await stdout._queue.put(b"")
+
+    with pytest.raises(RuntimeError):
+        await asyncio.wait_for(future, timeout=1.0)
+
+    reader.cancel()
+    try:
+        await reader
+    except asyncio.CancelledError:
+        pass
 
 
 def test_ensure_codex_present_prefers_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -102,3 +276,39 @@ def test_ensure_codex_present_raises_when_not_found(monkeypatch: pytest.MonkeyPa
         ensure_codex_present()
 
 
+@pytest.mark.asyncio()
+async def test_notifications_with_id_are_treated_as_notifications(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Notifications that include a non-null id but no result/error are still notifications."""
+
+    client = CodexMCP()
+
+    stdout = DummyStdout()
+    client._proc = DummyProc(stdout)  # type: ignore[assignment]
+    reader = asyncio.create_task(client._reader_loop())  # type: ignore[arg-type]
+
+    payload = {
+        "jsonrpc": "2.0",
+        "id": 123,
+        "method": "notifications/progress",
+        "params": {
+            "related_request_id": "req-100",
+            "progress": 5,
+            "total": 10,
+        },
+    }
+    await stdout.push_json(payload)
+    await stdout._queue.put(b"")
+
+    event: CodexEvent = await asyncio.wait_for(
+        client.get_global_event_queue().get(), timeout=1.0
+    )
+    assert event.event_type == CodexEventType.PROGRESS
+    assert event.related_request_id == "req-100"
+
+    reader.cancel()
+    try:
+        await reader
+    except asyncio.CancelledError:
+        pass

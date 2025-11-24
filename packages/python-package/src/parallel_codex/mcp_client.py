@@ -15,8 +15,9 @@ import shutil
 import sys
 from collections import deque
 from dataclasses import dataclass, field
+from enum import Enum
 from pathlib import Path
-from typing import Any, Deque, Dict, Optional
+from typing import Any, Deque, Dict, List, Optional
 
 LOG = logging.getLogger(__name__)
 
@@ -70,6 +71,17 @@ async def ensure_codex_logged_in() -> None:
         )
 
 
+class CodexEventType(str, Enum):
+    """Categorization for MCP server events."""
+
+    REQUEST = "request"
+    RESPONSE = "response"
+    NOTIFICATION = "notification"
+    PROGRESS = "progress"
+    LOGGING = "logging"
+    ERROR = "error"
+
+
 @dataclass(slots=True)
 class CodexEvent:
     """A decoded event or response from the MCP server."""
@@ -77,6 +89,115 @@ class CodexEvent:
     raw: Dict[str, Any]
     session_id: Optional[str] = None
     is_notification: bool = False
+    event_type: CodexEventType = CodexEventType.NOTIFICATION
+    related_request_id: Optional[str] = None
+    request_id: Optional[str] = None
+    timestamp: float = 0.0
+
+
+@dataclass(slots=True)
+class TrackedNotification:
+    """Structured representation of an intermediate notification."""
+
+    event_type: CodexEventType
+    message: Dict[str, Any]
+    timestamp: float
+    session_id: Optional[str] = None
+    related_request_id: Optional[str] = None
+
+
+@dataclass(slots=True)
+class RequestTimeline:
+    """Full lifecycle of a Codex MCP request."""
+
+    request_id: str
+    method: Optional[str] = None
+    params: Optional[Dict[str, Any]] = None
+    sent_at: Optional[float] = None
+    response: Optional[Dict[str, Any]] = None
+    completed_at: Optional[float] = None
+    status: str = "pending"
+    session_id: Optional[str] = None
+    notifications: List[TrackedNotification] = field(default_factory=list)
+
+
+class CodexEventTracker:
+    """Track notifications and responses grouped by request id."""
+
+    def __init__(self) -> None:
+        self._timelines: Dict[str, RequestTimeline] = {}
+        self._intermediate_events: Dict[str, List[TrackedNotification]] = {}
+        self.conversation_map: Dict[str, List[str]] = {}
+
+    # ------------------------------------------------------------------
+    # Request lifecycle helpers
+    # ------------------------------------------------------------------
+    def _ensure_timeline(self, request_id: str) -> RequestTimeline:
+        timeline = self._timelines.get(request_id)
+        if timeline is None:
+            timeline = RequestTimeline(request_id=request_id)
+            self._timelines[request_id] = timeline
+        return timeline
+
+    def track_outgoing_request(
+        self,
+        request_id: str,
+        *,
+        method: str,
+        params: Dict[str, Any],
+        session_hint: Optional[str],
+        timestamp: float,
+    ) -> None:
+        timeline = self._ensure_timeline(request_id)
+        timeline.method = method
+        timeline.params = params
+        timeline.sent_at = timestamp
+        timeline.status = "pending"
+        if session_hint:
+            timeline.session_id = session_hint
+
+    def set_session_id(self, request_id: str, session_id: str) -> None:
+        timeline = self._ensure_timeline(request_id)
+        timeline.session_id = session_id
+
+    def track_notification(self, request_id: str, notification: TrackedNotification) -> None:
+        timeline = self._ensure_timeline(request_id)
+        timeline.notifications.append(notification)
+        if notification.session_id and timeline.session_id is None:
+            timeline.session_id = notification.session_id
+        self._intermediate_events.setdefault(request_id, []).append(notification)
+
+    def track_response(
+        self,
+        request_id: str,
+        *,
+        message: Dict[str, Any],
+        timestamp: float,
+        session_id: Optional[str] = None,
+    ) -> None:
+        timeline = self._ensure_timeline(request_id)
+        timeline.response = message
+        timeline.completed_at = timestamp
+        timeline.status = "complete"
+        if session_id:
+            timeline.session_id = session_id
+
+        result = message.get("result")
+        if isinstance(result, dict):
+            conversation_id = (
+                result.get("conversationId")
+                or result.get("conversation_id")
+                or result.get("conversationID")
+            )
+            if conversation_id:
+                self.conversation_map.setdefault(conversation_id, []).append(request_id)
+
+    def get_request_timeline(self, request_id: str) -> Optional[RequestTimeline]:
+        return self._timelines.get(request_id)
+
+    def get_intermediate_events(self, request_id: str) -> List[TrackedNotification]:
+        return list(self._intermediate_events.get(request_id, []))
+
 
 
 @dataclass(slots=True)
@@ -96,6 +217,7 @@ class CodexMCP:
         self._proc: Optional[asyncio.subprocess.Process] = None
         self._next_id: int = 1
         self._reader_task: Optional[asyncio.Task[None]] = None
+        self._stderr_task: Optional[asyncio.Task[None]] = None
 
         # Map request id -> PendingCall
         self._pending: Dict[int, PendingCall] = {}
@@ -105,6 +227,8 @@ class CodexMCP:
         self._sessionless_queue: Deque[PendingCall] = deque()
         # Global event stream for all notifications, regardless of session.
         self._global_events: "asyncio.Queue[CodexEvent]" = asyncio.Queue()
+        # Tracker for correlating intermediate notifications.
+        self._event_tracker = CodexEventTracker()
 
         # Protect writes to stdin
         self._write_lock = asyncio.Lock()
@@ -121,13 +245,26 @@ class CodexMCP:
         await ensure_codex_logged_in()
         codex_path = ensure_codex_present()
 
+        # Enable the rmcp_client feature so that Codex emits rich MCP
+        # notifications (progress, logging, etc.) over stdout. This mirrors
+        # the recommended invocation:
+        #   DEBUG=true LOG_LEVEL=debug codex --enable rmcp_client mcp-server
+        cmd = [codex_path, "--enable", "rmcp_client", "mcp-server"]
+
+        # Default the Codex subprocess to a verbose logging configuration
+        # so that it actually emits progress/logging notifications. Users can
+        # override these via their own environment if desired.
+        env = os.environ.copy()
+        env.setdefault("DEBUG", "true")
+        env.setdefault("LOG_LEVEL", "debug")
+
         LOG.info("Starting codex mcp-server")
         self._proc = await asyncio.create_subprocess_exec(
-            codex_path,
-            "mcp-server",
+            *cmd,
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            env=env,
         )
 
         if self._proc.stdout is None or self._proc.stdin is None:
@@ -135,6 +272,12 @@ class CodexMCP:
 
         # Start reader task that demultiplexes all responses and notifications.
         self._reader_task = asyncio.create_task(self._reader_loop(), name="codex-mcp-reader")
+        # Drain stderr so that Codex debug logs do not block the subprocess.
+        if self._proc.stderr is not None:
+            self._stderr_task = asyncio.create_task(
+                self._stderr_loop(),
+                name="codex-mcp-stderr",
+            )
 
     async def stop(self) -> None:
         """Terminate the subprocess and clean up tasks."""
@@ -160,6 +303,14 @@ class CodexMCP:
             except asyncio.CancelledError:
                 pass
             self._reader_task = None
+
+        if self._stderr_task is not None:
+            self._stderr_task.cancel()
+            try:
+                await self._stderr_task
+            except asyncio.CancelledError:
+                pass
+            self._stderr_task = None
 
     # ------------------------------------------------------------------
     # Public API
@@ -205,9 +356,40 @@ class CodexMCP:
 
         return self._global_events
 
+    @property
+    def event_tracker(self) -> CodexEventTracker:
+        """Expose the shared event tracker for request timelines."""
+
+        return self._event_tracker
+
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
+    async def _stderr_loop(self) -> None:
+        """Consume stderr from the Codex subprocess and forward to logging.
+
+        The Codex MCP server uses stderr for debug and progress logs when
+        DEBUG/LOG_LEVEL are set. If stderr is not drained, the pipe buffer can
+        fill and block further protocol messages on stdout.
+        """
+
+        assert self._proc is not None
+        assert self._proc.stderr is not None
+
+        stream = self._proc.stderr
+        while True:
+            line = await stream.readline()
+            if not line:
+                return
+
+            try:
+                text = line.decode("utf-8", errors="replace").rstrip()
+            except Exception:  # pragma: no cover - extremely defensive
+                continue
+
+            if text:
+                LOG.debug("codex mcp-server stderr: %s", text)
+
     async def _send_tool_call(
         self,
         *,
@@ -242,6 +424,15 @@ class CodexMCP:
         if name == "codex":
             # We expect a session_configured notification once the session is ready.
             self._sessionless_queue.append(pending)
+
+        timestamp = asyncio.get_running_loop().time()
+        self._event_tracker.track_outgoing_request(
+            str(request_id),
+            method=name,
+            params=request["params"],
+            session_hint=session_hint,
+            timestamp=timestamp,
+        )
 
         body = json.dumps(request, separators=(",", ":"))
 
@@ -282,21 +473,51 @@ class CodexMCP:
             await self._handle_message(message)
 
     async def _handle_message(self, message: Dict[str, Any]) -> None:
-        # Notifications have a "method" field and no "id".
-        if "method" in message and "id" not in message:
+        # Notifications have a "method" field and no "result"/"error" payload.
+        # Some servers may still include an "id" for correlation, so we
+        # classify based on the absence of result/error rather than id.
+        if "method" in message and "result" not in message and "error" not in message:
             await self._handle_notification(message)
             return
 
         # Responses refer to an earlier request id.
-        if "id" in message and "result" in message:
+        if "id" in message and ("result" in message or "error" in message):
             request_id = message["id"]
             pending = self._pending.pop(request_id, None)
             if pending is None:
                 LOG.warning("Received response for unknown id=%s", request_id)
                 return
 
+            rid = str(request_id)
+            timeline = self._event_tracker.get_request_timeline(rid)
+            session_id = pending.session_hint
+            if timeline is not None and timeline.session_id is not None:
+                session_id = timeline.session_id
+
+            timestamp = asyncio.get_running_loop().time()
+            self._event_tracker.track_response(
+                rid,
+                message=message,
+                timestamp=timestamp,
+                session_id=session_id,
+            )
+
+            event = CodexEvent(
+                raw=message,
+                session_id=session_id,
+                is_notification=False,
+                event_type=CodexEventType.RESPONSE,
+                related_request_id=rid,
+                request_id=rid,
+                timestamp=timestamp,
+            )
+            await self._global_events.put(event)
+
             if not pending.future.done():
-                pending.future.set_result(message["result"])
+                if "error" in message:
+                    pending.future.set_exception(RuntimeError(str(message["error"])))
+                else:
+                    pending.future.set_result(message["result"])
             return
 
         # Errors or other messages.
@@ -305,29 +526,45 @@ class CodexMCP:
     async def _handle_notification(self, message: Dict[str, Any]) -> None:
         method = message.get("method")
         params = message.get("params") or {}
+        payload = _flatten_notification_payload(params)
 
         # Extract session id if present in known notification shapes.
-        session_id: Optional[str] = None
-        if method == "session_configured":
-            msg = params.get("msg") or {}
-            session_id = msg.get("session_id")
-            if session_id is not None and self._sessionless_queue:
-                pending = self._sessionless_queue.popleft()
-                LOG.info(
-                    "Associated session_id=%s with request id=%s",
-                    session_id,
-                    pending.request_id,
-                )
+        session_id: Optional[str] = payload.get("session_id")
+        if method == "session_configured" and session_id is not None and self._sessionless_queue:
+            pending = self._sessionless_queue.popleft()
+            LOG.info(
+                "Associated session_id=%s with request id=%s",
+                session_id,
+                pending.request_id,
+            )
+            pending.session_hint = session_id
+            self._event_tracker.set_session_id(str(pending.request_id), session_id)
 
-        elif method == "notifications/progress":
-            # Some progress messages might carry a session id depending on server implementation.
-            msg = params.get("msg") or {}
-            session_id = msg.get("session_id")
+        related_request_id = _extract_related_request_id(message)
+        event_type = _classify_event_type(method)
+        timestamp = asyncio.get_running_loop().time()
 
-        event = CodexEvent(raw=message, session_id=session_id, is_notification=True)
+        event = CodexEvent(
+            raw=message,
+            session_id=session_id,
+            is_notification=True,
+            event_type=event_type,
+            related_request_id=related_request_id,
+            timestamp=timestamp,
+        )
 
         # Publish to the global event stream first so consumers can observe all activity.
         await self._global_events.put(event)
+
+        if related_request_id is not None:
+            tracked = TrackedNotification(
+                event_type=event_type,
+                message=message,
+                timestamp=timestamp,
+                session_id=session_id,
+                related_request_id=related_request_id,
+            )
+            self._event_tracker.track_notification(related_request_id, tracked)
 
         if session_id:
             queue = self.get_session_queue(session_id)
@@ -351,3 +588,45 @@ def configure_logging(level: int = logging.INFO) -> None:
     )
 
 
+# ----------------------------------------------------------------------
+# Helpers
+# ----------------------------------------------------------------------
+def _classify_event_type(method: Optional[str]) -> CodexEventType:
+    if not method:
+        return CodexEventType.NOTIFICATION
+
+    lowered = method.lower()
+    if "progress" in lowered:
+        return CodexEventType.PROGRESS
+    if "logging" in lowered:
+        return CodexEventType.LOGGING
+    if "error" in lowered:
+        return CodexEventType.ERROR
+    return CodexEventType.NOTIFICATION
+
+
+def _flatten_notification_payload(params: Dict[str, Any]) -> Dict[str, Any]:
+    payload = params or {}
+    msg = payload.get("msg")
+    if isinstance(msg, dict):
+        return msg
+    return payload
+
+
+def _extract_related_request_id(message: Dict[str, Any]) -> Optional[str]:
+    params = message.get("params") or {}
+    keys = ("related_request_id", "request_id")
+
+    for key in keys:
+        value = params.get(key)
+        if value is not None:
+            return str(value)
+
+    msg = params.get("msg")
+    if isinstance(msg, dict):
+        for key in keys:
+            value = msg.get(key)
+            if value is not None:
+                return str(value)
+
+    return None

@@ -75,6 +75,11 @@ export PARALLEL_CODEX_REPO_ROOT=/path/to/this/parallel-codex/checkout
 uv run --project packages/python-package python -m parallel_codex.cli tui
 ```
 
+## With logging
+```bash
+set TEXTUAL_LOG=textual.log && uv run --project packages/python-package python -m parallel_codex.cli tui
+```
+
 On **Windows with cmd.exe**, use `set` instead of `export`:
 
 ```cmd
