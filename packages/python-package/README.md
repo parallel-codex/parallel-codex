@@ -13,7 +13,7 @@ uv tool install parallel-codex
 
 You’ll get two CLIs:
 - `pcodex` – minimal, cross‑platform helper that manages git worktrees + tmux and can run `codex .`
-- `parallel-codex` – lower-level planner/list/prune for worktree metadata plus a TUI
+- `parallel-codex` – launches the Textual TUI (pass `--dev-log-panel` during development to mirror logs in-app)
 
 Prerequisites:
 - `git` and `tmux` on PATH. On Windows without tmux, `pcodex` auto-falls back to `wsl.exe -- tmux ...`.
@@ -55,62 +55,51 @@ pcodex prune reviewer --kill-session --remove-dir
 
 ## CLI Usage (development, no install)
 
-Run the CLIs without installing the package.
+Development now revolves exclusively around the TUI. Keep a dev log panel open at all times so you can see every `logging`
+call and stdout/stderr line inside the in-app widget.
 
-### From the Python package directory (all platforms)
-
-Change into the Python package directory first:
+### Default dev loop (from `packages/python-package`)
 
 ```bash
 cd packages/python-package
-uv run src/main.py plan reviewer main --base-dir ./.agents
-# or the single-file helper:
-uv run src/parallel_codex/pcodex.py up reviewer main --run-codex --attach
+uv run src/main.py tui --dev-log-panel
 ```
 
-On **Windows with cmd.exe**, the equivalent is:
+The positional `tui` argument is optional, but it remains supported so existing scripts keep working. Passing
+`--dev-log-panel` enables the scrolling log widget so any `logging.getLogger(__name__).info(...)` (or prints) appear
+without tailing a file.
+
+On **Windows with cmd.exe**:
 
 ```cmd
 cd C:\path\to\parallel-codex\packages\python-package
-uv run python src\main.py plan reviewer main --base-dir .\.agents
-uv run python src\parallel_codex\pcodex.py up reviewer main --run-codex --attach
+uv run python src\main.py tui --dev-log-panel
 ```
 
-These commands assume your **current working directory is `packages/python-package`**.  
-If you prefer to stay in the monorepo root (like this repository layout), use the
-`uv --project` style commands below instead.
+### Default dev loop from the repo root (`uv --project`)
 
-### From the monorepo root with `uv --project` (recommended for this repo)
-
-When working in this repository from the **top-level git root**, you can run the CLI
-via the installed package entry point instead of referencing `src/` paths directly:
+When you prefer to stay at the monorepo root, pin `uv` to the Python package and run:
 
 ```bash
-uv run --project packages/python-package python -m parallel_codex.cli plan reviewer main --base-dir ./.agents
+uv run --project packages/python-package python -m parallel_codex.cli tui --dev-log-panel
 ```
 
-On **Windows with cmd.exe** (the common case for this project):
+On **Windows with cmd.exe**:
 
 ```cmd
 cd C:\path\to\parallel-codex
-uv run --project packages\python-package python -m parallel_codex.cli plan reviewer main --base-dir .\.agents
+uv run --project packages\python-package python -m parallel_codex.cli tui --dev-log-panel
 ```
 
-This avoids `FileNotFoundError` issues that occur when mixing `--project` with
-relative `src/...` paths from the wrong working directory.
+These invocations respect `PARALLEL_CODEX_REPO_ROOT` for pointing the TUI at a repo outside your current directory.
 
-The published CLIs expose sub-commands:
+Published CLIs:
 
-- `parallel-codex plan <agent> <branch>` – calculate (and optionally materialise) a worktree plan.
-- `parallel-codex list` – list discovered plans inside a base directory.
-- `parallel-codex prune <agent>` – remove stored metadata, with `--prune-dir` to delete the folder entirely.
-- `parallel-codex tui` – launch a Textual TUI that drives multiple Codex sessions in parallel.
+- `parallel-codex [tui] [--dev-log-panel] ...` – launch the Textual TUI (only supported command).
 - `pcodex up <agent> <branch>` – ensure git worktree, ensure tmux session, optionally run `codex .`, and attach.
 - `pcodex switch <agent>` – switch/attach to the tmux session.
 - `pcodex list` – list worktrees and tmux session state.
 - `pcodex prune <agent> [--kill-session] [--remove-dir]` – kill session and/or remove directory.
-
-Each sub-command accepts `--base-dir` to target a custom location (defaults to `./.agents`).
 
 ### TUI usage
 
@@ -120,14 +109,15 @@ The TUI is aimed at running several Codex sessions in parallel, each in its own 
 - Each session gets its own branch and worktree under `./.agents/<session-name>`.
 - Your IDE can open each worktree separately to compare changes across sessions.
 
-Launch the TUI from the root of your git repo:
+Launch the TUI from the root of your git repo (add `--dev-log-panel` during development to surface logs inside the widget):
 
 ```bash
 parallel-codex tui \
   --repo . \
   --agents-base ./.agents \
   --model gpt-5-codex \
-  --sandbox workspace-write
+  --sandbox workspace-write \
+  --dev-log-panel
 ```
 
 Keyboard shortcuts:
@@ -179,22 +169,17 @@ $env:PARALLEL_CODEX_REPO_ROOT = "C:\path\to\your\parallel-codex"
 uv run --project packages\python-package python -m parallel_codex.cli tui
 ```
 
-## Library Usage
+#### Logging via the dev panel
 
-Import the helpers in automation scripts:
+The `--dev-log-panel` flag is now the default development mode. It wires Python's standard `logging` module plus
+stdout/stderr directly into the in-app widget, so you can emit diagnostics without hunting for files.
 
 ```python
-from pathlib import Path
-from parallel_codex import plan_worktree
+import logging
 
-plan = plan_worktree(Path("./agents"), "summariser", "feature/summary")
-print(plan.path)
+LOG = logging.getLogger(__name__)
+LOG.info("Bootstrapping repo sync for %s", repo_root)
 ```
 
-Or rely on the CLI for quick experiments:
-
-```bash
-uv run parallel-codex summariser feature/summary --base-dir ./agents
-```
-
-The CLI prints a single line summary describing the worktree location, agent name, and branch target.
+Anything logged this way (or printed) scrolls live in the dev panel, which makes it the preferred way to surface debug
+information while iterating on agents.

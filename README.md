@@ -71,37 +71,32 @@ environment variable and use the Python package as the `uv` project:
 # POSIX shells (macOS, Linux, WSL, Git Bash) – set once in your shell profile
 export PARALLEL_CODEX_REPO_ROOT=/path/to/this/parallel-codex/checkout
 
-# Then, from anywhere:
-uv run --project packages/python-package python -m parallel_codex.cli tui
-```
-
-## With logging
-```bash
+# Then, from anywhere (recommended dev command):
 uv run --project packages/python-package python -m parallel_codex.cli tui --dev-log-panel
 ```
-This mirrors Python `logging` plus any stdout/stderr output into an in-app scrollable log panel, so you can watch live MCP activity without tailing a separate file.
+
+Passing `--dev-log-panel` is now the default development workflow—it mirrors Python `logging` plus any stdout/stderr
+output into an in-app scrollable log panel, so you can watch live MCP activity without tailing a separate file.
 
 On **Windows with cmd.exe**, use `set` instead of `export`:
 
 ```cmd
 set PARALLEL_CODEX_REPO_ROOT=C:\path\to\this\parallel-codex\checkout
-uv run --project packages\python-package python -m parallel_codex.cli tui
+uv run --project packages\python-package python -m parallel_codex.cli tui --dev-log-panel
 ```
 
 On **Windows with PowerShell**, use the `$env:` prefix:
 
 ```powershell
 $env:PARALLEL_CODEX_REPO_ROOT = "C:\path\to\this\parallel-codex\checkout"
-uv run --project packages\python-package python -m parallel_codex.cli tui
+uv run --project packages\python-package python -m parallel_codex.cli tui --dev-log-panel
 ```
 
 This keeps the TUI’s `--repo` pointing at your actual git root while `uv` still runs against the `packages/python-package`
 project. See `packages/python-package/README.md` for more details on `PARALLEL_CODEX_REPO_ROOT` and the optional
 `PARALLEL_CODEX_CODEX_PATH` override used to locate the `codex` CLI.
 
-Advanced CLI (original):
-
-Run `parallel-codex --help` after installation to explore planning/listing/pruning worktree metadata used by higher-level tooling.
+The CLI now focuses solely on the TUI. Use the `pcodex` helper if you need the legacy tmux/worktree automation commands.
 
 ## Repository Layout
 
@@ -155,9 +150,8 @@ Run `parallel-codex --help` after installation to explore planning/listing/pruni
    - `uv run --project packages/python-package pytest` (Python tests)
    - `npm test --workspace @parallel-codex/typescript-package` (TypeScript tests - placeholder)
 4. Explore the Python CLI locally:
-   - `uv run packages/python-package/src/main.py --help`
-   - `uv run packages/python-package/src/main.py plan reviewer main`
-   - Or use the single-file helper: `uv run packages/python-package/src/parallel_codex/pcodex.py up reviewer main --run-codex --attach`
+   - `uv run packages/python-package/src/main.py tui --dev-log-panel`
+   - Or use the single-file helper for tmux workflows: `uv run packages/python-package/src/parallel_codex/pcodex.py up reviewer main --run-codex --attach`
 
 **Note:** The TypeScript package is currently a placeholder. Focus development on the Python package until the core logic is complete.
 
