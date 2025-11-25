@@ -3,21 +3,28 @@
 from __future__ import annotations
 
 import asyncio
+import io
+import logging
+import sys
+from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Optional, TextIO
 
 from rich.markup import escape
 from textual import on
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Vertical
-from textual.widgets import Footer, Input, Static
+from textual.css.query import NoMatches
+from textual.widgets import Footer, Input, Log, Static
 
 from ..mcp_client import CodexEvent, CodexEventType, CodexMCP, configure_logging
 from ..worktrees import SessionWorktree, ensure_session_worktree
 from .session_manager import SessionManager
 from .widgets import SessionPane, SessionRow
+
+LOG = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -26,6 +33,83 @@ class AppConfig:
     agents_base: Path
     model: str = "gpt-5-codex"
     sandbox: str = "workspace-write"
+    show_log_panel: bool = False
+
+
+class _TextualLogHandler(logging.Handler):
+    """Logging handler that forwards records into a Textual Log widget."""
+
+    def __init__(self, app: "ParallelCodexApp") -> None:
+        super().__init__()
+        self._app = app
+
+    def emit(self, record: logging.LogRecord) -> None:  # type: ignore[override]
+        try:
+            message = self.format(record)
+        except Exception:  # pragma: no cover - extremely defensive
+            return
+        self._app._submit_dev_log_line(message)
+
+
+class _TextualStreamTap(io.TextIOBase):
+    """Mirror stdout/stderr writes into the in-app log panel."""
+
+    def __init__(
+        self,
+        app: "ParallelCodexApp",
+        stream: TextIO | None,
+        *,
+        label: str,
+    ) -> None:
+        super().__init__()
+        self._app = app
+        self._stream = stream
+        self._label = label
+        self._buffer: str = ""
+
+    def write(self, data: str) -> int:  # type: ignore[override]
+        if not data:
+            return 0
+        if self._stream is not None:
+            self._stream.write(data)
+
+        text = data.replace("\r\n", "\n").replace("\r", "\n")
+        self._buffer += text
+
+        while "\n" in self._buffer:
+            line, self._buffer = self._buffer.split("\n", 1)
+            self._emit(line)
+        return len(data)
+
+    def flush(self) -> None:  # type: ignore[override]
+        if self._stream is not None:
+            self._stream.flush()
+        if self._buffer:
+            self._emit(self._buffer)
+            self._buffer = ""
+
+    @property
+    def encoding(self) -> str:  # pragma: no cover - passthrough
+        if self._stream is not None and getattr(self._stream, "encoding", None):
+            return self._stream.encoding  # type: ignore[return-value]
+        return "utf-8"
+
+    def fileno(self) -> int:  # pragma: no cover - passthrough
+        if self._stream is not None and hasattr(self._stream, "fileno"):
+            return self._stream.fileno()  # type: ignore[return-value]
+        raise OSError("Stream has no file descriptor")
+
+    def isatty(self) -> bool:  # pragma: no cover - passthrough
+        if self._stream is not None and hasattr(self._stream, "isatty"):
+            return self._stream.isatty()
+        return False
+
+    def _emit(self, line: str) -> None:
+        if not line:
+            return
+
+        message = f"[{self._label}] {line}"
+        self._app._submit_dev_log_line(message)
 
 
 class ParallelCodexApp(App[None]):
@@ -95,6 +179,14 @@ class ParallelCodexApp(App[None]):
         margin: 0 1 1 1;
         background: #050301;
     }
+
+    #dev-log {
+        height: 8;
+        border: solid #2c1c0c;
+        background: #050301;
+        margin: 0 1 1 1;
+        padding: 0 1;
+    }
     """
 
     BINDINGS = [
@@ -112,12 +204,22 @@ class ParallelCodexApp(App[None]):
         self._session_counter = 0
         self._event_tasks: list[asyncio.Task[None]] = []
         self._waiting_for_session_id: "asyncio.Queue" = asyncio.Queue()
+        self._log_handler: _TextualLogHandler | None = None
+        self._stdout_tap: _TextualStreamTap | None = None
+        self._stderr_tap: _TextualStreamTap | None = None
+        self._original_stdout: TextIO | None = None
+        self._original_stderr: TextIO | None = None
+        self._dev_log_widget: Log | None = None
+        self._dev_log_buffer: deque[str] = deque(maxlen=2000)
 
     # ------------------------------------------------------------------
     # Textual lifecycle
     # ------------------------------------------------------------------
     async def on_mount(self) -> None:
         configure_logging()
+        # Optionally mirror Python logs into the in-app dev log panel.
+        if self._config.show_log_panel:
+            self._enable_dev_console()
         await self._mcp.start()
         # Start a task to route MCP notifications into the UI.
         events_task = asyncio.create_task(self._event_router(), name="codex-event-router")
@@ -125,15 +227,118 @@ class ParallelCodexApp(App[None]):
         # Start with a single session by default.
         await self._ensure_session()
 
+    async def on_ready(self) -> None:
+        if not self._config.show_log_panel:
+            return
+        try:
+            self._dev_log_widget = self.query_one("#dev-log", Log)
+        except NoMatches:
+            self._dev_log_widget = None
+        else:
+            self._flush_dev_log_buffer()
+
     async def on_shutdown(self) -> None:
         for task in self._event_tasks:
             task.cancel()
         await self._mcp.stop()
 
+        if self._config.show_log_panel:
+            self._disable_dev_console()
+
     def compose(self) -> ComposeResult:
         with Vertical():
             yield SessionRow()
+            if self._config.show_log_panel:
+                log_widget = Log(id="dev-log")
+                log_widget.border_title = "Logs"
+                yield log_widget
         yield Footer()
+
+    def _attach_log_handler(self) -> None:
+        """Attach a single shared handler that writes into the dev Log widget."""
+
+        if self._log_handler is not None:
+            return
+
+        handler = _TextualLogHandler(self)
+        handler.setLevel(logging.DEBUG)
+        handler.setFormatter(
+            logging.Formatter("%(asctime)s - %(levelname)s - %(name)s - %(message)s")
+        )
+
+        root_logger = logging.getLogger()
+        root_logger.addHandler(handler)
+        self._log_handler = handler
+
+    def _enable_dev_console(self) -> None:
+        logging.getLogger().setLevel(logging.DEBUG)
+        self._attach_log_handler()
+        self._redirect_standard_streams()
+        self._write_dev_log_line("[dev] Log console capturing logging + stdout/stderr")
+
+    def _disable_dev_console(self) -> None:
+        self._restore_standard_streams()
+        if self._log_handler is not None:
+            root_logger = logging.getLogger()
+            root_logger.removeHandler(self._log_handler)
+            self._log_handler = None
+
+    def _redirect_standard_streams(self) -> None:
+        if self._stdout_tap is not None or self._stderr_tap is not None:
+            return
+
+        self._original_stdout = sys.stdout
+        self._original_stderr = sys.stderr
+        self._stdout_tap = _TextualStreamTap(self, self._original_stdout, label="stdout")
+        self._stderr_tap = _TextualStreamTap(self, self._original_stderr, label="stderr")
+        sys.stdout = self._stdout_tap  # type: ignore[assignment]
+        sys.stderr = self._stderr_tap  # type: ignore[assignment]
+
+    def _restore_standard_streams(self) -> None:
+        if self._stdout_tap is not None:
+            self._stdout_tap.flush()
+
+        if self._stderr_tap is not None:
+            self._stderr_tap.flush()
+
+        if self._original_stdout is not None:
+            sys.stdout = self._original_stdout  # type: ignore[assignment]
+            self._original_stdout = None
+
+        if self._original_stderr is not None:
+            sys.stderr = self._original_stderr  # type: ignore[assignment]
+            self._original_stderr = None
+
+        self._stdout_tap = None
+        self._stderr_tap = None
+
+    def _submit_dev_log_line(self, line: str) -> None:
+        if not self._config.show_log_panel:
+            return
+
+        def _deliver() -> None:
+            self._write_dev_log_line(line)
+
+        try:
+            self.call_from_thread(_deliver)
+        except RuntimeError:
+            self._dev_log_buffer.append(line)
+
+    def _write_dev_log_line(self, line: str) -> None:
+        if not line:
+            return
+        widget = self._dev_log_widget
+        if widget is None:
+            self._dev_log_buffer.append(line)
+            return
+        widget.write_line(line)
+
+    def _flush_dev_log_buffer(self) -> None:
+        widget = self._dev_log_widget
+        if widget is None:
+            return
+        while self._dev_log_buffer:
+            widget.write_line(self._dev_log_buffer.popleft())
 
     # ------------------------------------------------------------------
     # Session management helpers
@@ -153,6 +358,12 @@ class ParallelCodexApp(App[None]):
         )
         model.branch_name = worktree.branch_name
         model.workspace_path = worktree.path
+        LOG.info(
+            "Session %s ready (branch=%s, workspace=%s)",
+            session_name,
+            worktree.branch_name,
+            worktree.path,
+        )
 
         row = self.query_one(SessionRow)
         pane = SessionPane(session_name)
@@ -256,6 +467,8 @@ class ParallelCodexApp(App[None]):
             self._update_focus_visuals()
 
         pane.add_user_message(prompt)
+        pane_identifier = pane.id or "<unknown>"
+        LOG.info("Prompt submitted in %s: %s", pane_identifier, self._truncate(prompt))
 
         model = self._sessions.focused
         if model is None:
@@ -311,7 +524,7 @@ class ParallelCodexApp(App[None]):
         while True:
             event: CodexEvent = await queue.get()
             method = event.raw.get("method")
-            self.log(
+            LOG.debug(
                 f"MCP event: type={event.event_type} method={method!r} "
                 f"is_notification={event.is_notification} raw={event.raw}"
             )
@@ -326,23 +539,23 @@ class ParallelCodexApp(App[None]):
                 except asyncio.QueueEmpty:
                     continue
                 model.session_id = session_id
-                self.log(f"Session configured: {model.name} -> {session_id}")
+                LOG.info("Session configured: %s -> %s", model.name, session_id)
                 continue
 
             if event.event_type == CodexEventType.PROGRESS:
-                self.log(f"MCP progress event: {event.raw}")
+                LOG.debug("MCP progress event: %s", event.raw)
                 self._handle_progress_notification(event)
                 continue
 
             if event.event_type == CodexEventType.LOGGING:
-                self.log(f"MCP logging event: {event.raw}")
+                LOG.debug("MCP logging event: %s", event.raw)
                 self._handle_logging_notification(event)
                 continue
 
             # Any other notification types are surfaced as generic events so that
             # intermediate activity is still visible in the UI and logs.
             if event.is_notification:
-                self.log(f"MCP notification event (unhandled): {event.raw}")
+                LOG.debug("MCP notification event (unhandled): %s", event.raw)
                 self._handle_generic_notification(event)
                 continue
 
@@ -382,7 +595,7 @@ class ParallelCodexApp(App[None]):
     def _handle_progress_notification(self, event: CodexEvent) -> None:
         pane = self._pane_for_event(event)
         if pane is None:
-            self.log(f"Discarding progress event; no pane available: {event.raw}")
+            LOG.debug("Discarding progress event; no pane available: %s", event.raw)
             return
 
         payload = self._notification_payload(event)
@@ -397,7 +610,7 @@ class ParallelCodexApp(App[None]):
     def _handle_logging_notification(self, event: CodexEvent) -> None:
         pane = self._pane_for_event(event)
         if pane is None:
-            self.log(f"Discarding logging event; no pane available: {event.raw}")
+            LOG.debug("Discarding logging event; no pane available: %s", event.raw)
             return
 
         payload = self._notification_payload(event)
@@ -411,7 +624,7 @@ class ParallelCodexApp(App[None]):
 
         pane = self._pane_for_event(event)
         if pane is None:
-            self.log(f"Discarding generic event; no pane available: {event.raw}")
+            LOG.debug("Discarding generic event; no pane available: %s", event.raw)
             return
 
         payload = self._notification_payload(event)

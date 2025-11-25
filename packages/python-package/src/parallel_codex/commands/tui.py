@@ -39,6 +39,11 @@ def register(subparsers: _SubParsersAction[ArgumentParser]) -> None:
         default="workspace-write",
         help="Codex sandbox mode (default: workspace-write)",
     )
+    parser.add_argument(
+        "--dev-log-panel",
+        action="store_true",
+        help="Show a live, scrollable log panel for development",
+    )
     parser.set_defaults(handler=execute)
 
 
@@ -50,9 +55,9 @@ def execute(args: Namespace) -> int:
         agents_base=args.agents_base,
         model=args.model,
         sandbox=args.sandbox,
+        show_log_panel=args.dev_log_panel,
     )
     app = ParallelCodexApp(config)
     app.run()
     return 0
-
 

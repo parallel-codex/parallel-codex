@@ -77,8 +77,9 @@ uv run --project packages/python-package python -m parallel_codex.cli tui
 
 ## With logging
 ```bash
-set TEXTUAL_LOG=textual.log && uv run --project packages/python-package python -m parallel_codex.cli tui
+uv run --project packages/python-package python -m parallel_codex.cli tui --dev-log-panel
 ```
+This mirrors Python `logging` plus any stdout/stderr output into an in-app scrollable log panel, so you can watch live MCP activity without tailing a separate file.
 
 On **Windows with cmd.exe**, use `set` instead of `export`:
 
