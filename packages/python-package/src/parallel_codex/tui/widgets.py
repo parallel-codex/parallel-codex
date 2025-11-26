@@ -10,7 +10,7 @@ from textual.css.query import NoMatches
 from textual.message import Message
 from textual.reactive import reactive
 from textual.widget import Widget
-from textual.widgets import Input, Markdown, Static
+from textual.widgets import Collapsible, Input, LoadingIndicator, Markdown, RichLog, Static
 
 
 class UserMessage(Static):
@@ -52,6 +52,11 @@ class SessionPane(Vertical):
         self.label = name
         self.border_title = name
         self._title_locked = False
+        self._active_collapsible: Collapsible | None = None
+        self._active_rich_log: RichLog | None = None
+        self._active_loader: LoadingIndicator | None = None
+        self._active_streaming_message: MarkdownMessage | None = None
+        self._streaming_content: list[str] = []
         self._refresh_border_title()
 
     def compose(self) -> ComposeResult:
@@ -83,6 +88,97 @@ class SessionPane(Vertical):
         messages.mount(widget)
         messages.scroll_end(animate=False)
 
+    def start_processing(self) -> None:
+        """Begin a new processing turn with a collapsible log and loader."""
+        # Clean up any previous state just in case
+        self.finish_processing()
+
+        # 1. Reasoning widget (Markdown for smooth text streaming)
+        self._reasoning_content = ""
+        self._active_reasoning_widget = Markdown("")
+
+        # 2. Event log (RichLog for discrete events like commands)
+        self._active_rich_log = RichLog(markup=True, wrap=True)
+
+        # Container for the collapsible content
+        self._processing_container = VerticalScroll(
+            self._active_reasoning_widget,
+            self._active_rich_log
+        )
+
+        self._active_collapsible = Collapsible(self._processing_container, title="Processing...", collapsed=True)
+        
+        self._active_loader = LoadingIndicator()
+        self._active_loader.styles.height = 1
+        
+        # Reset streaming state
+        self._active_streaming_message = None
+        self._streaming_content = []
+
+        self._append_message(self._active_collapsible)
+        self._append_message(self._active_loader)
+
+    def update_reasoning(self, delta: str, title: str | None = None) -> None:
+        """Update the reasoning text block."""
+        self._reasoning_content += delta
+        if self._active_reasoning_widget:
+            self._active_reasoning_widget.update(self._reasoning_content)
+        
+        if title and self._active_collapsible:
+            self._active_collapsible.title = title
+
+    def log_processing_event(self, message: str, title: str | None = None) -> None:
+        """Add a discrete event entry to the processing log."""
+        if self._active_rich_log:
+            self._active_rich_log.write(message)
+        
+        if title and self._active_collapsible:
+            self._active_collapsible.title = title
+
+    def stream_assistant_chunk(self, chunk: str) -> None:
+        """Stream content into the assistant's response message."""
+        
+        if self._active_streaming_message is None:
+            # Create the message widget if it doesn't exist
+            self._active_streaming_message = MarkdownMessage("", classes="message message-assistant")
+            # Insert it before the loader if possible, or just append
+            messages = self._messages_container()
+            if self._active_loader:
+                 # Mount before the loader so the loader stays at the bottom
+                 messages.mount(self._active_streaming_message, before=self._active_loader)
+            else:
+                 messages.mount(self._active_streaming_message)
+            messages.scroll_end(animate=False)
+
+        self._streaming_content.append(chunk)
+        # Update the markdown content
+        full_text = "".join(self._streaming_content)
+        self._active_streaming_message.update(full_text)
+        self._messages_container().scroll_end(animate=False)
+
+    def finish_processing(self, final_text: Any | None = None) -> None:
+        """Complete the processing turn, remove loader, ensure final text is shown."""
+        if self._active_loader:
+            self._active_loader.remove()
+            self._active_loader = None
+            
+        if final_text is not None:
+            normalized_text = _normalize_markdown_content(final_text)
+            # If we were streaming, ensure the final text matches or replaces it
+            if self._active_streaming_message:
+                self._active_streaming_message.update(normalized_text)
+            else:
+                self.add_markdown_message(normalized_text)
+        
+        # Cleanup references
+        self._active_collapsible = None
+        self._processing_container = None
+        self._active_reasoning_widget = None
+        self._active_rich_log = None
+        self._active_streaming_message = None
+        self._streaming_content = []
+        self._reasoning_content = ""
+
     def add_user_message(self, text: str) -> None:
         self.ensure_thread_title(text)
         self._append_message(UserMessage(text, classes="message message-user"))
@@ -96,7 +192,12 @@ class SessionPane(Vertical):
         )
 
     def add_event_message(self, text: str) -> None:
-        self._append_message(EventMessage(text, classes="message message-event"))
+        # Fallback for events that happen outside of a processing turn or if we want to log them differently
+        # But if we have an active log, prefer that.
+        if self._active_rich_log:
+            self._active_rich_log.write(text)
+        else:
+            self._append_message(EventMessage(text, classes="message message-event"))
 
     def focus_input(self) -> None:
         """Move keyboard focus into this session's input, if present."""

@@ -467,6 +467,7 @@ class ParallelCodexApp(App[None]):
             self._update_focus_visuals()
 
         pane.add_user_message(prompt)
+        pane.start_processing()
         pane_identifier = pane.id or "<unknown>"
         LOG.info("Prompt submitted in %s: %s", pane_identifier, self._truncate(prompt))
 
@@ -497,9 +498,9 @@ class ParallelCodexApp(App[None]):
         config: dict,
     ) -> None:
         result = await self._mcp.call_codex(prompt, config=config)
-        # The final result is expected to contain the assistant message; we treat it as markdown.
-        text = result.get("content") or str(result)
-        pane.add_markdown_message(text)
+        # Pass raw content list; pane.finish_processing will normalize it.
+        content = result.get("content") or result
+        pane.finish_processing(content)
 
         # Session id will be bound asynchronously by the event router.
 
@@ -511,8 +512,8 @@ class ParallelCodexApp(App[None]):
     ) -> None:
         assert model.session_id is not None
         result = await self._mcp.reply(model.session_id, prompt)
-        text = result.get("content") or str(result)
-        pane.add_markdown_message(text)
+        content = result.get("content") or result
+        pane.finish_processing(content)
 
     # ------------------------------------------------------------------
     # MCP event routing
@@ -555,7 +556,7 @@ class ParallelCodexApp(App[None]):
             # Any other notification types are surfaced as generic events so that
             # intermediate activity is still visible in the UI and logs.
             if event.is_notification:
-                LOG.debug("MCP notification event (unhandled): %s", event.raw)
+                # LOG.debug("MCP notification event (unhandled): %s", event.raw)
                 self._handle_generic_notification(event)
                 continue
 
@@ -628,16 +629,56 @@ class ParallelCodexApp(App[None]):
             return
 
         payload = self._notification_payload(event)
-        method = str(event.raw.get("method", "notification"))
-        message = (
-            payload.get("message")
-            or payload.get("data")
-            or payload.get("msg")
-            or payload.get("text")
-            or payload
-        )
-        snippet = escape(self._truncate(str(message)))
-        pane.add_event_message(f"[magenta]{method}[/] {snippet}")
+        msg_type = payload.get("type")
+
+        # Specific event handling for Codex rich events
+        # We use item_completed because item_started often lacks the summary_text info we need for the title.
+        if msg_type == "item_completed":
+            item = payload.get("item", {})
+            if item.get("type") == "Reasoning":
+                summary = item.get("summary_text")
+                if summary and isinstance(summary, list):
+                    # Clean up markdown bold markers if present for the title
+                    title_text = "".join(summary).strip().replace("**", "")
+                    pane.log_processing_event("", title=title_text)
+            return
+
+        if msg_type == "reasoning_content_delta":
+            delta = payload.get("delta")
+            if delta:
+                pane.update_reasoning(str(delta))
+            return
+
+        if msg_type == "exec_command_begin":
+            cmd = payload.get("command")
+            if isinstance(cmd, list):
+                cmd = " ".join(cmd)
+            pane.log_processing_event(f"[bold]Running:[/bold] {cmd}\n", title=f"Running '{cmd}'")
+            return
+
+        if msg_type == "exec_command_output_delta":
+            chunk = payload.get("chunk")
+            import base64
+            if chunk:
+                try:
+                    decoded = base64.b64decode(chunk).decode("utf-8", errors="replace")
+                    pane.log_processing_event(decoded)
+                except Exception:
+                    pane.log_processing_event(str(chunk))
+            return
+
+        if msg_type == "exec_command_end":
+            pane.log_processing_event("\n[bold]Command finished.[/bold]\n", title="Processing...")
+            return
+
+        if msg_type in ("agent_message_delta", "agent_message_content_delta"):
+            delta = payload.get("delta")
+            if delta:
+                pane.stream_assistant_chunk(str(delta))
+            return
+
+        # Fallback: Ignore other events to prevent log noise as per user request.
+        return
 
     @staticmethod
     def _percent_complete(progress: Optional[float], total: Optional[float]) -> int:
