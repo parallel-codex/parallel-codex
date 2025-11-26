@@ -459,6 +459,13 @@ class CodexMCP:
             await self._handle_message(message)
 
     async def _handle_message(self, message: Dict[str, Any]) -> None:
+        # Debug: dump all incoming events to a file
+        try:
+            with open("codex_events.log", "a", encoding="utf-8") as f:
+                f.write(json.dumps(message) + "\n")
+        except Exception:
+            pass  # Don't crash on logging failure
+
         # Notifications have a "method" field and no "result"/"error" payload.
         # Some servers may still include an "id" for correlation, so we
         # classify based on the absence of result/error rather than id.

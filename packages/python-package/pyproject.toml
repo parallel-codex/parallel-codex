@@ -33,7 +33,6 @@ dev = [
 
 [project.scripts]
 parallel-codex = "parallel_codex.cli:main"
-pcodex = "parallel_codex.pcodex:main"
 
 [build-system]
 requires = ["hatchling"]
