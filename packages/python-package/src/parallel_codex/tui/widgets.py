@@ -93,25 +93,19 @@ class SessionPane(Vertical):
         # Clean up any previous state just in case
         self.finish_processing()
 
-        # 1. Reasoning widget (Markdown for smooth text streaming)
-        self._reasoning_content = ""
-        self._active_reasoning_widget = Markdown("")
-
-        # 2. Event log (RichLog for discrete events like commands)
-        self._active_rich_log = RichLog(markup=True, wrap=True)
-
         # Container for the collapsible content
-        self._processing_container = VerticalScroll(
-            self._active_reasoning_widget,
-            self._active_rich_log
-        )
-
+        self._processing_container = VerticalScroll()
+        
         self._active_collapsible = Collapsible(self._processing_container, title="Processing...", collapsed=True)
         
         self._active_loader = LoadingIndicator()
         self._active_loader.styles.height = 1
         
-        # Reset streaming state
+        # State for processing stream
+        self._current_block_widget: Markdown | None = None
+        self._current_block_text: str = ""
+        
+        # Reset streaming state for assistant message
         self._active_streaming_message = None
         self._streaming_content = []
 
@@ -120,17 +114,30 @@ class SessionPane(Vertical):
 
     def update_reasoning(self, delta: str, title: str | None = None) -> None:
         """Update the reasoning text block."""
-        self._reasoning_content += delta
-        if self._active_reasoning_widget:
-            self._active_reasoning_widget.update(self._reasoning_content)
+        # If we aren't currently writing to a markdown block, start one
+        if self._current_block_widget is None:
+            self._current_block_text = ""
+            self._current_block_widget = Markdown("")
+            self._processing_container.mount(self._current_block_widget)
+            self._processing_container.scroll_end(animate=False)
+
+        self._current_block_text += delta
+        self._current_block_widget.update(self._current_block_text)
         
         if title and self._active_collapsible:
             self._active_collapsible.title = title
 
     def log_processing_event(self, message: str, title: str | None = None) -> None:
         """Add a discrete event entry to the processing log."""
-        if self._active_rich_log:
-            self._active_rich_log.write(message)
+        # Break the current reasoning block if one exists
+        self._current_block_widget = None
+        self._current_block_text = ""
+
+        # Add the event message as a separate widget (Static supports markup)
+        event_widget = Static(message, markup=True)
+        
+        self._processing_container.mount(event_widget)
+        self._processing_container.scroll_end(animate=False)
         
         if title and self._active_collapsible:
             self._active_collapsible.title = title
@@ -173,11 +180,10 @@ class SessionPane(Vertical):
         # Cleanup references
         self._active_collapsible = None
         self._processing_container = None
-        self._active_reasoning_widget = None
-        self._active_rich_log = None
+        self._current_block_widget = None
+        self._current_block_text = ""
         self._active_streaming_message = None
         self._streaming_content = []
-        self._reasoning_content = ""
 
     def add_user_message(self, text: str) -> None:
         self.ensure_thread_title(text)
