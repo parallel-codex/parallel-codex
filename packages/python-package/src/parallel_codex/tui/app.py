@@ -203,7 +203,7 @@ class ParallelCodexApp(App[None]):
         self._mcp = CodexMCP()
         self._session_counter = 0
         self._event_tasks: list[asyncio.Task[None]] = []
-        self._waiting_for_session_id: "asyncio.Queue" = asyncio.Queue()
+        self._request_to_model: dict[str, Any] = {}
         self._log_handler: _TextualLogHandler | None = None
         self._stdout_tap: _TextualStreamTap | None = None
         self._stderr_tap: _TextualStreamTap | None = None
@@ -483,7 +483,6 @@ class ParallelCodexApp(App[None]):
                 "sandbox": self._config.sandbox,
             }
             # Record that this model is waiting on a session_configured event.
-            await self._waiting_for_session_id.put(model)
             task = asyncio.create_task(self._run_codex_call(model, pane, prompt, config))
         else:
             task = asyncio.create_task(self._run_codex_reply(model, pane, prompt))
@@ -497,10 +496,21 @@ class ParallelCodexApp(App[None]):
         prompt: str,
         config: dict,
     ) -> None:
-        result = await self._mcp.call_codex(prompt, config=config)
-        # Pass raw content list; pane.finish_processing will normalize it.
-        content = result.get("content") or result
-        pane.finish_processing(content)
+        request_id, future, send = self._mcp.prepare_codex_call(prompt, config=config)
+        
+        # Track the model by request_id so we can route session_configured events.
+        # We must register this BEFORE sending to avoid a race where events arrive
+        # before registration.
+        self._request_to_model[request_id] = model
+        
+        try:
+            await send()
+            result = await future
+            # Pass raw content list; pane.finish_processing will normalize it.
+            content = result.get("content") or result
+            pane.finish_processing(content)
+        finally:
+            self._request_to_model.pop(request_id, None)
 
         # Session id will be bound asynchronously by the event router.
 
@@ -511,9 +521,18 @@ class ParallelCodexApp(App[None]):
         prompt: str,
     ) -> None:
         assert model.session_id is not None
-        result = await self._mcp.reply(model.session_id, prompt)
-        content = result.get("content") or result
-        pane.finish_processing(content)
+        request_id, future, send = self._mcp.prepare_reply(model.session_id, prompt)
+        
+        # Track pending request so fallback logic in _pane_for_event can find it
+        self._request_to_model[request_id] = model
+
+        try:
+            await send()
+            result = await future
+            content = result.get("content") or result
+            pane.finish_processing(content)
+        finally:
+            self._request_to_model.pop(request_id, None)
 
     # ------------------------------------------------------------------
     # MCP event routing
@@ -532,15 +551,13 @@ class ParallelCodexApp(App[None]):
 
             if method == "session_configured":
                 session_id = event.session_id
-                if session_id is None:
-                    continue
-                # Assign this session id to the next model waiting for one.
-                try:
-                    model = self._waiting_for_session_id.get_nowait()
-                except asyncio.QueueEmpty:
-                    continue
-                model.session_id = session_id
-                LOG.info("Session configured: %s -> %s", model.name, session_id)
+                request_id = event.related_request_id
+                
+                if session_id and request_id:
+                    model = self._request_to_model.get(request_id)
+                    if model:
+                        model.session_id = session_id
+                        LOG.info("Session configured: %s -> %s (req=%s)", model.name, session_id, request_id)
                 continue
 
             if event.event_type == CodexEventType.PROGRESS:
@@ -564,23 +581,35 @@ class ParallelCodexApp(App[None]):
         """Resolve which session pane should render a notification."""
 
         session_id = event.session_id
+        
+        # If no explicit session ID, try to infer from timeline or pending request.
         if session_id is None and event.related_request_id is not None:
             timeline = self._mcp.event_tracker.get_request_timeline(event.related_request_id)
             if timeline is not None:
                 session_id = timeline.session_id
+            
+            # Fallback: check if we have a pending request for this model
+            if session_id is None:
+                model = self._request_to_model.get(event.related_request_id)
+                if model:
+                    return self._get_pane_by_name(model.name)
 
         if session_id is None:
             sessions = self._sessions.all_sessions()
             if len(sessions) == 1:
                 return self._get_pane_by_name(sessions[0].name)
-            focused = self._get_focused_pane()
-            if focused is not None:
-                return focused
-            if sessions:
-                return self._get_pane_by_name(sessions[0].name)
+            # Dangerous fallback to focused pane removed to avoid concurrency issues.
+            # If we can't map the event to a specific session, it's safer to drop it
+            # than to display it in the wrong session.
             return None
 
         model = self._sessions.find_by_session_id(session_id)
+        if model is None:
+            # Fallback: check pending requests again if session ID didn't resolve to a model yet
+            # (though normally session_configured should have updated the model)
+            if event.related_request_id:
+                model = self._request_to_model.get(event.related_request_id)
+        
         if model is None:
             return None
 

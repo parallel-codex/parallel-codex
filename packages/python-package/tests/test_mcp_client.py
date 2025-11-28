@@ -30,8 +30,24 @@ class DummyStdout:
 
 
 class DummyProc:
-    def __init__(self, stdout: DummyStdout) -> None:
+    def __init__(self, stdout: DummyStdout, stdin: Any) -> None:
         self.stdout = stdout
+        self.stdin = stdin
+        self.stderr = None
+
+
+class DummyStdin:
+    def __init__(self) -> None:
+        self.writes: list[bytes] = []
+
+    def write(self, data: bytes) -> None:
+        self.writes.append(data)
+
+    async def drain(self) -> None:
+        pass
+
+    def close(self) -> None:
+        pass
 
 
 @pytest.mark.asyncio()
@@ -39,8 +55,8 @@ async def test_global_event_queue_receives_notifications(monkeypatch: pytest.Mon
     client = CodexMCP()
 
     stdout = DummyStdout()
-    # Patch the internal process to avoid actually spawning codex.
-    client._proc = DummyProc(stdout)  # type: ignore[assignment]
+    stdin = DummyStdin()
+    client._proc = DummyProc(stdout, stdin)  # type: ignore[assignment]
 
     reader = asyncio.create_task(client._reader_loop())  # type: ignore[arg-type]
 
@@ -74,7 +90,8 @@ async def test_logging_notification_updates_tracker(monkeypatch: pytest.MonkeyPa
     client = CodexMCP()
 
     stdout = DummyStdout()
-    client._proc = DummyProc(stdout)  # type: ignore[assignment]
+    stdin = DummyStdin()
+    client._proc = DummyProc(stdout, stdin)  # type: ignore[assignment]
     reader = asyncio.create_task(client._reader_loop())  # type: ignore[arg-type]
 
     tracker = client.event_tracker
@@ -119,7 +136,8 @@ async def test_responses_published_to_global_queue(monkeypatch: pytest.MonkeyPat
     client = CodexMCP()
 
     stdout = DummyStdout()
-    client._proc = DummyProc(stdout)  # type: ignore[assignment]
+    stdin = DummyStdin()
+    client._proc = DummyProc(stdout, stdin)  # type: ignore[assignment]
 
     loop = asyncio.get_running_loop()
     future: "asyncio.Future[Dict[str, Any]]" = loop.create_future()
@@ -171,7 +189,8 @@ async def test_notifications_with_null_id_are_processed(monkeypatch: pytest.Monk
     client = CodexMCP()
 
     stdout = DummyStdout()
-    client._proc = DummyProc(stdout)  # type: ignore[assignment]
+    stdin = DummyStdin()
+    client._proc = DummyProc(stdout, stdin)  # type: ignore[assignment]
     reader = asyncio.create_task(client._reader_loop())  # type: ignore[arg-type]
 
     payload = {
@@ -203,7 +222,8 @@ async def test_error_responses_reject_pending_calls(monkeypatch: pytest.MonkeyPa
     client = CodexMCP()
 
     stdout = DummyStdout()
-    client._proc = DummyProc(stdout)  # type: ignore[assignment]
+    stdin = DummyStdin()
+    client._proc = DummyProc(stdout, stdin)  # type: ignore[assignment]
 
     loop = asyncio.get_running_loop()
     future: "asyncio.Future[Dict[str, Any]]" = loop.create_future()
@@ -285,7 +305,8 @@ async def test_notifications_with_id_are_treated_as_notifications(
     client = CodexMCP()
 
     stdout = DummyStdout()
-    client._proc = DummyProc(stdout)  # type: ignore[assignment]
+    stdin = DummyStdin()
+    client._proc = DummyProc(stdout, stdin)  # type: ignore[assignment]
     reader = asyncio.create_task(client._reader_loop())  # type: ignore[arg-type]
 
     payload = {
@@ -312,3 +333,33 @@ async def test_notifications_with_id_are_treated_as_notifications(
         await reader
     except asyncio.CancelledError:
         pass
+
+
+@pytest.mark.asyncio()
+async def test_prepare_codex_call_separates_id_and_sending() -> None:
+    """Ensure we can obtain the request_id before the data is actually sent."""
+    client = CodexMCP()
+    stdout = DummyStdout()
+    stdin = DummyStdin()
+    client._proc = DummyProc(stdout, stdin)  # type: ignore[assignment]
+
+    # Prepare the call
+    req_id, future, send = client.prepare_codex_call("hello")
+
+    # Should have an ID, but nothing written to stdin yet
+    assert req_id == "1"
+    assert not future.done()
+    assert len(stdin.writes) == 0
+
+    # Pending call should be registered
+    assert 1 in client._pending
+
+    # Now send it
+    await send()
+    
+    # Should be written now
+    assert len(stdin.writes) == 1
+    sent_data = json.loads(stdin.writes[0])
+    assert sent_data["id"] == 1
+    assert sent_data["method"] == "tools/call"
+    assert sent_data["params"]["name"] == "codex"
