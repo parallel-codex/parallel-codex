@@ -14,10 +14,10 @@ import os
 import shutil
 import sys
 from collections import deque
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
-from pathlib import Path
-from typing import Any, Deque, Dict, List, Optional, Tuple
+from typing import Any
 
 LOG = logging.getLogger(__name__)
 
@@ -86,12 +86,12 @@ class CodexEventType(str, Enum):
 class CodexEvent:
     """A decoded event or response from the MCP server."""
 
-    raw: Dict[str, Any]
-    session_id: Optional[str] = None
+    raw: dict[str, Any]
+    session_id: str | None = None
     is_notification: bool = False
     event_type: CodexEventType = CodexEventType.NOTIFICATION
-    related_request_id: Optional[str] = None
-    request_id: Optional[str] = None
+    related_request_id: str | None = None
+    request_id: str | None = None
     timestamp: float = 0.0
 
 
@@ -100,10 +100,10 @@ class TrackedNotification:
     """Structured representation of an intermediate notification."""
 
     event_type: CodexEventType
-    message: Dict[str, Any]
+    message: dict[str, Any]
     timestamp: float
-    session_id: Optional[str] = None
-    related_request_id: Optional[str] = None
+    session_id: str | None = None
+    related_request_id: str | None = None
 
 
 @dataclass(slots=True)
@@ -111,21 +111,21 @@ class RequestTimeline:
     """Full lifecycle of a Codex MCP request."""
 
     request_id: str
-    method: Optional[str] = None
-    params: Optional[Dict[str, Any]] = None
-    sent_at: Optional[float] = None
-    response: Optional[Dict[str, Any]] = None
-    completed_at: Optional[float] = None
+    method: str | None = None
+    params: dict[str, Any] | None = None
+    sent_at: float | None = None
+    response: dict[str, Any] | None = None
+    completed_at: float | None = None
     status: str = "pending"
-    session_id: Optional[str] = None
-    notifications: List[TrackedNotification] = field(default_factory=list)
+    session_id: str | None = None
+    notifications: list[TrackedNotification] = field(default_factory=list)
 
 
 class CodexEventTracker:
     """Track notifications and responses grouped by request id."""
 
     def __init__(self) -> None:
-        self._timelines: Dict[str, RequestTimeline] = {}
+        self._timelines: dict[str, RequestTimeline] = {}
 
     # ------------------------------------------------------------------
     # Request lifecycle helpers
@@ -142,8 +142,8 @@ class CodexEventTracker:
         request_id: str,
         *,
         method: str,
-        params: Dict[str, Any],
-        session_hint: Optional[str],
+        params: dict[str, Any],
+        session_hint: str | None,
         timestamp: float,
     ) -> None:
         timeline = self._ensure_timeline(request_id)
@@ -168,9 +168,9 @@ class CodexEventTracker:
         self,
         request_id: str,
         *,
-        message: Dict[str, Any],
+        message: dict[str, Any],
         timestamp: float,
-        session_id: Optional[str] = None,
+        session_id: str | None = None,
     ) -> None:
         timeline = self._ensure_timeline(request_id)
         timeline.response = message
@@ -180,7 +180,7 @@ class CodexEventTracker:
             timeline.session_id = session_id
 
 
-    def get_request_timeline(self, request_id: str) -> Optional[RequestTimeline]:
+    def get_request_timeline(self, request_id: str) -> RequestTimeline | None:
         return self._timelines.get(request_id)
 
 
@@ -192,27 +192,27 @@ class PendingCall:
 
     request_id: int
     method_name: str
-    session_hint: Optional[str]
-    future: "asyncio.Future[Dict[str, Any]]"
+    session_hint: str | None
+    future: asyncio.Future[dict[str, Any]]
 
 
 class CodexMCP:
     """Async client for a single ``codex mcp-server`` subprocess."""
 
     def __init__(self) -> None:
-        self._proc: Optional[asyncio.subprocess.Process] = None
+        self._proc: asyncio.subprocess.Process | None = None
         self._next_id: int = 1
-        self._reader_task: Optional[asyncio.Task[None]] = None
-        self._stderr_task: Optional[asyncio.Task[None]] = None
+        self._reader_task: asyncio.Task[None] | None = None
+        self._stderr_task: asyncio.Task[None] | None = None
 
         # Map request id -> PendingCall
-        self._pending: Dict[int, PendingCall] = {}
+        self._pending: dict[int, PendingCall] = {}
         # session_id -> asyncio.Queue[CodexEvent]
-        self._session_queues: Dict[str, "asyncio.Queue[CodexEvent]"] = {}
+        self._session_queues: dict[str, asyncio.Queue[CodexEvent]] = {}
         # FIFO of codex calls that are waiting for their first session_configured
-        self._sessionless_queue: Deque[PendingCall] = deque()
+        self._sessionless_queue: deque[PendingCall] = deque()
         # Global event stream for all notifications, regardless of session.
-        self._global_events: "asyncio.Queue[CodexEvent]" = asyncio.Queue()
+        self._global_events: asyncio.Queue[CodexEvent] = asyncio.Queue()
         # Tracker for correlating intermediate notifications.
         self._event_tracker = CodexEventTracker()
 
@@ -277,7 +277,7 @@ class CodexMCP:
             proc.stdin.close()
         try:
             await asyncio.wait_for(proc.wait(), timeout=5.0)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             proc.kill()
 
         self._proc = None
@@ -305,8 +305,8 @@ class CodexMCP:
         self,
         prompt: str,
         *,
-        config: Optional[Dict[str, Any]] = None,
-    ) -> Tuple[str, "asyncio.Future[Dict[str, Any]]"]:
+        config: dict[str, Any] | None = None,
+    ) -> tuple[str, asyncio.Future[dict[str, Any]]]:
         """Start a new Codex session via the ``codex`` MCP tool.
 
         Returns:
@@ -325,8 +325,8 @@ class CodexMCP:
         self,
         prompt: str,
         *,
-        config: Optional[Dict[str, Any]] = None,
-    ) -> Tuple[str, "asyncio.Future[Dict[str, Any]]", Callable[[], Any]]:
+        config: dict[str, Any] | None = None,
+    ) -> tuple[str, asyncio.Future[dict[str, Any]], Callable[[], Any]]:
         """Prepare a new Codex session call without sending it yet.
 
         Returns:
@@ -342,7 +342,7 @@ class CodexMCP:
         self,
         session_id: str,
         prompt: str,
-    ) -> Tuple[str, "asyncio.Future[Dict[str, Any]]"]:
+    ) -> tuple[str, asyncio.Future[dict[str, Any]]]:
         """Send a follow-up instruction using the ``codex-reply`` tool.
 
         Returns:
@@ -361,7 +361,7 @@ class CodexMCP:
         self,
         session_id: str,
         prompt: str,
-    ) -> Tuple[str, "asyncio.Future[Dict[str, Any]]", Callable[[], Any]]:
+    ) -> tuple[str, asyncio.Future[dict[str, Any]], Callable[[], Any]]:
         """Prepare a reply call without sending it yet.
 
         Returns:
@@ -373,7 +373,7 @@ class CodexMCP:
             session_hint=session_id,
         )
 
-    def get_session_queue(self, session_id: str) -> "asyncio.Queue[CodexEvent]":
+    def get_session_queue(self, session_id: str) -> asyncio.Queue[CodexEvent]:
         """Return a queue that receives events for ``session_id``."""
 
         queue = self._session_queues.get(session_id)
@@ -382,7 +382,7 @@ class CodexMCP:
             self._session_queues[session_id] = queue
         return queue
 
-    def get_global_event_queue(self) -> "asyncio.Queue[CodexEvent]":
+    def get_global_event_queue(self) -> asyncio.Queue[CodexEvent]:
         """Return a queue that receives all notification events."""
 
         return self._global_events
@@ -425,16 +425,16 @@ class CodexMCP:
         self,
         *,
         name: str,
-        arguments: Dict[str, Any],
-        session_hint: Optional[str],
-    ) -> Tuple[str, "asyncio.Future[Dict[str, Any]]", Callable[[], Any]]:
+        arguments: dict[str, Any],
+        session_hint: str | None,
+    ) -> tuple[str, asyncio.Future[dict[str, Any]], Callable[[], Any]]:
         if self._proc is None or self._proc.stdin is None:
             raise RuntimeError("Codex MCP server is not running. Call start() first.")
 
         request_id = self._next_id
         self._next_id += 1
 
-        request: Dict[str, Any] = {
+        request: dict[str, Any] = {
             "jsonrpc": "2.0",
             "id": request_id,
             "method": "tools/call",
@@ -444,7 +444,7 @@ class CodexMCP:
             },
         }
 
-        future: "asyncio.Future[Dict[str, Any]]" = asyncio.get_running_loop().create_future()
+        future: asyncio.Future[dict[str, Any]] = asyncio.get_running_loop().create_future()
         pending = PendingCall(
             request_id=request_id,
             method_name=name,
@@ -471,7 +471,7 @@ class CodexMCP:
             # Re-check proc state in case it died since preparation
             if self._proc is None or self._proc.stdin is None:
                 raise RuntimeError("Codex MCP server is not running.")
-            
+
             async with self._write_lock:
                 LOG.debug("Sending request id=%s method=%s", request_id, name)
                 self._proc.stdin.write((body + "\n").encode("utf-8"))
@@ -508,7 +508,7 @@ class CodexMCP:
 
             await self._handle_message(message)
 
-    async def _handle_message(self, message: Dict[str, Any]) -> None:
+    async def _handle_message(self, message: dict[str, Any]) -> None:
         # Notifications have a "method" field and no "result"/"error" payload.
         # Some servers may still include an "id" for correlation, so we
         # classify based on the absence of result/error rather than id.
@@ -559,24 +559,24 @@ class CodexMCP:
         # Errors or other messages.
         LOG.warning("Unhandled message from codex mcp-server: %s", message)
 
-    async def _handle_notification(self, message: Dict[str, Any]) -> None:
+    async def _handle_notification(self, message: dict[str, Any]) -> None:
         method = message.get("method")
         params = message.get("params") or {}
         payload = _flatten_notification_payload(params)
         related_request_id = _extract_related_request_id(message)
 
         # Extract session id if present in known notification shapes.
-        session_id: Optional[str] = payload.get("session_id")
+        session_id: str | None = payload.get("session_id")
         if method == "session_configured" and session_id is not None and self._sessionless_queue:
             # Try to match a pending session call by ID, falling back to FIFO if not possible.
-            matched_pending: Optional[PendingCall] = None
+            matched_pending: PendingCall | None = None
 
             if related_request_id is not None:
                 for pending in self._sessionless_queue:
                     if str(pending.request_id) == related_request_id:
                         matched_pending = pending
                         break
-            
+
             if matched_pending is None:
                 # Fallback: assume strict ordering if no ID is available to correlate.
                 matched_pending = self._sessionless_queue[0]
@@ -646,7 +646,7 @@ def configure_logging(level: int = logging.INFO) -> None:
 # ----------------------------------------------------------------------
 # Helpers
 # ----------------------------------------------------------------------
-def _classify_event_type(method: Optional[str]) -> CodexEventType:
+def _classify_event_type(method: str | None) -> CodexEventType:
     if not method:
         return CodexEventType.NOTIFICATION
 
@@ -660,7 +660,7 @@ def _classify_event_type(method: Optional[str]) -> CodexEventType:
     return CodexEventType.NOTIFICATION
 
 
-def _flatten_notification_payload(params: Dict[str, Any]) -> Dict[str, Any]:
+def _flatten_notification_payload(params: dict[str, Any]) -> dict[str, Any]:
     payload = params or {}
     msg = payload.get("msg")
     if isinstance(msg, dict):
@@ -668,9 +668,9 @@ def _flatten_notification_payload(params: Dict[str, Any]) -> Dict[str, Any]:
     return payload
 
 
-def _extract_related_request_id(message: Dict[str, Any]) -> Optional[str]:
+def _extract_related_request_id(message: dict[str, Any]) -> str | None:
     params = message.get("params") or {}
-    
+
     # Check _meta for requestId (seen in new events.log format)
     meta = params.get("_meta")
     if isinstance(meta, dict):

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import Any, Dict
+from typing import Any
 
 import pytest
 
@@ -19,12 +19,12 @@ class DummyStdout:
     """Fake stdout stream for driving the MCP reader loop."""
 
     def __init__(self) -> None:
-        self._queue: "asyncio.Queue[bytes]" = asyncio.Queue()
+        self._queue: asyncio.Queue[bytes] = asyncio.Queue()
 
     async def readline(self) -> bytes:
         return await self._queue.get()
 
-    async def push_json(self, payload: Dict[str, Any]) -> None:
+    async def push_json(self, payload: dict[str, Any]) -> None:
         line = json.dumps(payload).encode("utf-8") + b"\n"
         await self._queue.put(line)
 
@@ -140,7 +140,7 @@ async def test_responses_published_to_global_queue(monkeypatch: pytest.MonkeyPat
     client._proc = DummyProc(stdout, stdin)  # type: ignore[assignment]
 
     loop = asyncio.get_running_loop()
-    future: "asyncio.Future[Dict[str, Any]]" = loop.create_future()
+    future: asyncio.Future[dict[str, Any]] = loop.create_future()
     client._pending[1] = PendingCall(
         request_id=1,
         method_name="codex",
@@ -226,7 +226,7 @@ async def test_error_responses_reject_pending_calls(monkeypatch: pytest.MonkeyPa
     client._proc = DummyProc(stdout, stdin)  # type: ignore[assignment]
 
     loop = asyncio.get_running_loop()
-    future: "asyncio.Future[Dict[str, Any]]" = loop.create_future()
+    future: asyncio.Future[dict[str, Any]] = loop.create_future()
     client._pending[42] = PendingCall(
         request_id=42,
         method_name="codex",
@@ -356,7 +356,7 @@ async def test_prepare_codex_call_separates_id_and_sending() -> None:
 
     # Now send it
     await send()
-    
+
     # Should be written now
     assert len(stdin.writes) == 1
     sent_data = json.loads(stdin.writes[0])

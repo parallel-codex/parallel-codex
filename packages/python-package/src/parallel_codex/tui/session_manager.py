@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional
 
 
 @dataclass(slots=True)
@@ -14,19 +13,19 @@ class SessionModel:
     # Human-friendly label shown in the UI (e.g., "Session 1").
     name: str
     # Codex session_id once configured; None until the first reply.
-    session_id: Optional[str] = None
+    session_id: str | None = None
     # Branch and workspace for this session's git worktree.
-    branch_name: Optional[str] = None
-    workspace_path: Optional[Path] = None
+    branch_name: str | None = None
+    workspace_path: Path | None = None
 
 
 class SessionManager:
     """Tracks TUI sessions, their layout slots, and mapping to Codex ids."""
 
     def __init__(self) -> None:
-        self._sessions: Dict[str, SessionModel] = {}
-        self._session_order: List[str] = []
-        self._focused: Optional[str] = None
+        self._sessions: dict[str, SessionModel] = {}
+        self._session_order: list[str] = []
+        self._focused: str | None = None
 
     # ------------------------------------------------------------------
     # CRUD
@@ -46,10 +45,10 @@ class SessionManager:
         if self._focused == name:
             self._focused = self._session_order[0] if self._session_order else None
 
-    def get(self, name: str) -> Optional[SessionModel]:
+    def get(self, name: str) -> SessionModel | None:
         return self._sessions.get(name)
 
-    def all_sessions(self) -> List[SessionModel]:
+    def all_sessions(self) -> list[SessionModel]:
         return [self._sessions[n] for n in self._session_order]
 
     # ------------------------------------------------------------------
@@ -74,12 +73,12 @@ class SessionManager:
         self._focused = self._session_order[new_idx]
 
     @property
-    def focused(self) -> Optional[SessionModel]:
+    def focused(self) -> SessionModel | None:
         if self._focused is None:
             return None
         return self._sessions.get(self._focused)
 
-    def find_by_session_id(self, session_id: str) -> Optional[SessionModel]:
+    def find_by_session_id(self, session_id: str) -> SessionModel | None:
         for model in self._sessions.values():
             if model.session_id == session_id:
                 return model

@@ -9,7 +9,7 @@ import sys
 from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, TextIO
+from typing import Any, TextIO
 
 from rich.markup import escape
 from textual import on
@@ -17,7 +17,7 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Vertical
 from textual.css.query import NoMatches
-from textual.widgets import Footer, Input, Log, Static
+from textual.widgets import Footer, Input, Log
 
 from ..mcp_client import CodexEvent, CodexEventType, CodexMCP, configure_logging
 from ..worktrees import SessionWorktree, ensure_session_worktree
@@ -39,7 +39,7 @@ class AppConfig:
 class _TextualLogHandler(logging.Handler):
     """Logging handler that forwards records into a Textual Log widget."""
 
-    def __init__(self, app: "ParallelCodexApp") -> None:
+    def __init__(self, app: ParallelCodexApp) -> None:
         super().__init__()
         self._app = app
 
@@ -56,7 +56,7 @@ class _TextualStreamTap(io.TextIOBase):
 
     def __init__(
         self,
-        app: "ParallelCodexApp",
+        app: ParallelCodexApp,
         stream: TextIO | None,
         *,
         label: str,
@@ -380,13 +380,13 @@ class ParallelCodexApp(App[None]):
         self._update_focus_visuals()
         return pane
 
-    def _get_focused_pane(self) -> Optional[SessionPane]:
+    def _get_focused_pane(self) -> SessionPane | None:
         focused = self._sessions.focused
         if focused is None:
             return None
         return self._get_pane_by_name(focused.name)
 
-    def _get_pane_by_name(self, name: str) -> Optional[SessionPane]:
+    def _get_pane_by_name(self, name: str) -> SessionPane | None:
         row = self.query_one(SessionRow)
         for pane in row.children:
             if isinstance(pane, SessionPane) and pane.id == name:
@@ -431,7 +431,6 @@ class ParallelCodexApp(App[None]):
         focused = self._sessions.focused
         if focused is None:
             return
-        row = self.query_one(SessionRow)
         pane = self._get_focused_pane()
         if pane is not None:
             pane.remove()
@@ -497,12 +496,12 @@ class ParallelCodexApp(App[None]):
         config: dict,
     ) -> None:
         request_id, future, send = self._mcp.prepare_codex_call(prompt, config=config)
-        
+
         # Track the model by request_id so we can route session_configured events.
         # We must register this BEFORE sending to avoid a race where events arrive
         # before registration.
         self._request_to_model[request_id] = model
-        
+
         try:
             await send()
             result = await future
@@ -522,7 +521,7 @@ class ParallelCodexApp(App[None]):
     ) -> None:
         assert model.session_id is not None
         request_id, future, send = self._mcp.prepare_reply(model.session_id, prompt)
-        
+
         # Track pending request so fallback logic in _pane_for_event can find it
         self._request_to_model[request_id] = model
 
@@ -552,12 +551,17 @@ class ParallelCodexApp(App[None]):
             if method == "session_configured":
                 session_id = event.session_id
                 request_id = event.related_request_id
-                
+
                 if session_id and request_id:
                     model = self._request_to_model.get(request_id)
                     if model:
                         model.session_id = session_id
-                        LOG.info("Session configured: %s -> %s (req=%s)", model.name, session_id, request_id)
+                        LOG.info(
+                            "Session configured: %s -> %s (req=%s)",
+                            model.name,
+                            session_id,
+                            request_id,
+                        )
                 continue
 
             if event.event_type == CodexEventType.PROGRESS:
@@ -577,17 +581,17 @@ class ParallelCodexApp(App[None]):
                 self._handle_generic_notification(event)
                 continue
 
-    def _pane_for_event(self, event: CodexEvent) -> Optional[SessionPane]:
+    def _pane_for_event(self, event: CodexEvent) -> SessionPane | None:
         """Resolve which session pane should render a notification."""
 
         session_id = event.session_id
-        
+
         # If no explicit session ID, try to infer from timeline or pending request.
         if session_id is None and event.related_request_id is not None:
             timeline = self._mcp.event_tracker.get_request_timeline(event.related_request_id)
             if timeline is not None:
                 session_id = timeline.session_id
-            
+
             # Fallback: check if we have a pending request for this model
             if session_id is None:
                 model = self._request_to_model.get(event.related_request_id)
@@ -609,7 +613,7 @@ class ParallelCodexApp(App[None]):
             # (though normally session_configured should have updated the model)
             if event.related_request_id:
                 model = self._request_to_model.get(event.related_request_id)
-        
+
         if model is None:
             return None
 
@@ -661,7 +665,8 @@ class ParallelCodexApp(App[None]):
         msg_type = payload.get("type")
 
         # Specific event handling for Codex rich events
-        # We use item_completed because item_started often lacks the summary_text info we need for the title.
+        # We use item_completed because item_started often lacks the summary_text
+        # info we need for the title.
         if msg_type == "item_completed":
             item = payload.get("item", {})
             if item.get("type") == "Reasoning":
@@ -710,7 +715,7 @@ class ParallelCodexApp(App[None]):
         return
 
     @staticmethod
-    def _percent_complete(progress: Optional[float], total: Optional[float]) -> int:
+    def _percent_complete(progress: float | None, total: float | None) -> int:
         try:
             progress_val = float(progress if progress is not None else 0)
             total_val = float(total) if total not in (None, 0) else None

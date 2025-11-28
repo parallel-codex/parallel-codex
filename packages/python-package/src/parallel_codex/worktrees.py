@@ -9,7 +9,6 @@ from __future__ import annotations
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 
 class WorktreeError(RuntimeError):
@@ -40,7 +39,7 @@ def ensure_session_worktree(
     agents_base: Path,
     session_name: str,
     *,
-    branch_name: Optional[str] = None,
+    branch_name: str | None = None,
 ) -> SessionWorktree:
     """Create or reuse a git worktree for a Codex session.
 
@@ -103,8 +102,7 @@ def _run_git(args: list[str], *, cwd: Path) -> subprocess.CompletedProcess[str]:
         cwd=str(cwd),
         text=True,
         check=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        capture_output=True,
     )
 
 
