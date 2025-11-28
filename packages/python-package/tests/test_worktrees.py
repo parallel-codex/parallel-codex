@@ -11,6 +11,8 @@ def init_git_repo(path: Path) -> None:
     from subprocess import run
 
     run(["git", "init"], cwd=path, check=True)
+    run(["git", "config", "user.email", "you@example.com"], cwd=path, check=True)
+    run(["git", "config", "user.name", "Your Name"], cwd=path, check=True)
     (path / "README.md").write_text("test\n", encoding="utf-8")
     run(["git", "add", "README.md"], cwd=path, check=True)
     run(["git", "commit", "-m", "init"], cwd=path, check=True)

@@ -51,7 +51,7 @@ jobs:
           fi
 
           echo "Testing ${first_artifact}"
-          uv run --isolated --no-project --with "${first_artifact}" --with pytest pytest tests/
+          uv run --isolated --no-project --with "${first_artifact}" --with pytest --with pytest-asyncio pytest tests/
 
       - name: Upload dist artifacts
         uses: actions/upload-artifact@v4

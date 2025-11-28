@@ -63,7 +63,7 @@ jobs:
           fi
 
           echo "Testing package artifact: ${PKG}"
-          uv run --isolated --no-project --with "${PKG}" --with pytest pytest tests/
+          uv run --isolated --no-project --with "${PKG}" --with pytest --with pytest-asyncio pytest tests/
 
       - name: Publish package distributions to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
